@@ -35,9 +35,9 @@ vercel --prod
 Vercel 프로젝트에 다음 환경변수 추가:
 
 ```
-GOOGLE_CLIENT_ID=768102495846-p8f4pul3jn0rbkqvcujehmus2i8a1sjk.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=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
-REDIRECT_URI=https://reju-cs-dashboard.vercel.app/api/cs-gmail?action=callback
+GOOGLE_CLIENT_ID=your-client-id-here
+GOOGLE_CLIENT_SECRET=your-client-secret-here
+REDIRECT_URI=https://your-vercel-url.vercel.app/api/cs-gmail?action=callback
 ```
 
 ## 사용 방법
