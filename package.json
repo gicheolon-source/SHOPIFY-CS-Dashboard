@@ -1,0 +1,16 @@
+{
+  "name": "reju-cs-dashboard",
+  "version": "1.0.0",
+  "description": "CS Dashboard for Dr.Reju-All - Gmail + GitHub Integration",
+  "scripts": {
+    "dev": "vercel dev",
+    "build": "echo 'No build required'",
+    "start": "echo 'Use vercel dev'"
+  },
+  "keywords": ["cs", "dashboard", "gmail", "github"],
+  "author": "Dr.Reju-All Team",
+  "license": "MIT",
+  "dependencies": {
+    "googleapis": "^118.0.0"
+  }
+}

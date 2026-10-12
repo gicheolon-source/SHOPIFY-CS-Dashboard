@@ -1,0 +1,14 @@
+{
+  "buildCommand": "npm install",
+  "public": true,
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/public/index.html"
+    },
+    {
+      "source": "/((?!api/).*)",
+      "destination": "/public/index.html"
+    }
+  ]
+}
