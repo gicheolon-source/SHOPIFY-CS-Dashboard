@@ -1,5 +1,4 @@
 {
-  "buildCommand": "npm install",
   "rewrites": [
     {
       "source": "/",
@@ -9,5 +8,10 @@
       "source": "/((?!api/).*)",
       "destination": "/public/index.html"
     }
-  ]
+  ],
+  "functions": {
+    "api/**/*.js": {
+      "maxDuration": 60
+    }
+  }
 }
