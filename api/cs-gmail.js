@@ -69,7 +69,7 @@ async function fetchEmails(accessToken) {
     const result = await gmail.users.messages.list({
       userId: 'me',
       maxResults: 20,
-      q: 'from:global_md@drrejuall.com'
+      q: 'label:INBOX'  // INBOX의 모든 메일
     });
 
     const messages = result.data.messages || [];
