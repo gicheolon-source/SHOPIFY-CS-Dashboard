@@ -273,28 +273,17 @@
             document.getElementById('root').innerHTML = html;
         }
 
-        // URL 쿼리에서 코드 처리 (OAuth 콜백)
+        // URL 쿼리에서 토큰 처리 (OAuth 콜백)
         window.addEventListener('load', async () => {
             const urlParams = new URLSearchParams(window.location.search);
-            const code = urlParams.get('code');
+            const urlToken = urlParams.get('token');
 
-            if (code) {
-                try {
-                    const response = await fetch(`${API_BASE}?action=callback&code=${encodeURIComponent(code)}`);
-                    const data = await response.json();
-                    if (data.token) {
-                        localStorage.setItem('cs_gmail_token', data.token);
-                        token = data.token;
-                        window.history.replaceState({}, document.title, window.location.pathname);
-                        alert('Gmail 연동 성공!');
-                        loadEmails();
-                    } else {
-                        alert('Token exchange failed');
-                    }
-                } catch (error) {
-                    console.error('Callback error:', error);
-                    alert('OAuth callback failed: ' + error.message);
-                }
+            if (urlToken) {
+                localStorage.setItem('cs_gmail_token', urlToken);
+                token = urlToken;
+                window.history.replaceState({}, document.title, window.location.pathname);
+                alert('Gmail 연동 성공!');
+                loadEmails();
             }
 
             render();

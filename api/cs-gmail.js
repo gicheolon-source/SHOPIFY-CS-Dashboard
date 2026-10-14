@@ -138,8 +138,8 @@ module.exports = async function handler(req, res) {
       }
 
       const token = await getTokenFromCode(code);
-      // 프론트에서 이 토큰을 localStorage에 저장하고 사용
-      return res.status(200).json({ token, message: 'Authorization successful' });
+      // Canvas로 리다이렉트하면서 토큰 전달
+      return res.redirect(`/?token=${encodeURIComponent(token)}`);
     }
 
     if (action === 'emails') {
