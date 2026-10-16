@@ -1,161 +1,146 @@
-const { google } = require('googleapis');
-
-const CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
-const CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const REDIRECT_URI = process.env.REDIRECT_URI || 'http://localhost:3000/api/cs-gmail?action=callback';
-
-const oauth2Client = new google.auth.OAuth2(CLIENT_ID, CLIENT_SECRET, REDIRECT_URI);
-
-// Gmail API 인스턴스
-const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
-
-// 유형 분류 (제목/라벨에서 자동 감지)
-function detectType(subject, labels) {
-  const subjectLower = subject.toLowerCase();
-  const labelStr = (labels || []).join('|').toLowerCase();
-  const combined = subjectLower + '|' + labelStr;
-
-  if (combined.includes('ship') || combined.includes('배송') || combined.includes('delivery')) return '배송';
-  if (combined.includes('auth') || combined.includes('인증') || combined.includes('authentic')) return '인증';
-  if (combined.includes('affiliate') || combined.includes('제휴') || combined.includes('partner')) return '제휴';
-  if (combined.includes('refund') || combined.includes('환불') || combined.includes('return')) return '환불';
-  return '기타';
-}
-
-// 라벨 분류 (Gmail 라벨에서)
-function detectLabel(gmailLabels) {
-  if (!gmailLabels || gmailLabels.length === 0) return '신규';
-  const labels = gmailLabels.join('|').toLowerCase();
-
-  if (labels.includes('urgent') || labels.includes('긴급')) return '긴급';
-  if (labels.includes('follow') || labels.includes('follow-up')) return 'Follow-up';
-  return '신규';
-}
-
-// OAuth URL 생성
-function getAuthUrl() {
-  const scopes = [
-    'https://www.googleapis.com/auth/gmail.readonly'
-  ];
-
-  const url = oauth2Client.generateAuthUrl({
-    access_type: 'offline',
-    scope: scopes,
-  });
-
-  return url;
-}
-
-// 토큰 교환
-async function getTokenFromCode(code) {
-  try {
-    const { tokens } = await oauth2Client.getToken(code);
-    oauth2Client.setCredentials(tokens);
-    return tokens.access_token;
-  } catch (error) {
-    console.error('Token exchange error:', error);
-    throw error;
-  }
-}
-
-// Gmail에서 메일 조회
-async function fetchEmails(accessToken) {
-  try {
-    oauth2Client.setCredentials({
-      access_token: accessToken
-    });
-
-    // 최근 20개 메일 조회
-    const result = await gmail.users.messages.list({
-      userId: 'me',
-      maxResults: 20,
-      q: 'label:INBOX'  // INBOX의 모든 메일
-    });
-
-    const messages = result.data.messages || [];
-    const emails = [];
-
-    for (const message of messages) {
-      try {
-        const msg = await gmail.users.messages.get({
-          userId: 'me',
-          id: message.id,
-          format: 'full'
-        });
-
-        const headers = msg.data.payload.headers;
-        const subject = headers.find(h => h.name === 'Subject')?.value || '(No Subject)';
-        const from = headers.find(h => h.name === 'From')?.value || '';
-        const date = headers.find(h => h.name === 'Date')?.value || '';
-        const labels = msg.data.labelIds || [];
-
-        // 고객명 추출 (from 필드에서)
-        const fromMatch = from.match(/([^<]+)</);
-        const customer = fromMatch ? fromMatch[1].trim() : from.split('@')[0];
-
-        // 날짜 포맷 (YYYY-MM-DD)
-        const dateObj = new Date(date);
-        const formattedDate = dateObj.toISOString().split('T')[0];
-
-        emails.push({
-          id: message.id,
-          date: formattedDate,
-          from: from,
-          customer: customer,
-          subject: subject,
-          type: detectType(subject, labels),
-          label: detectLabel(labels),
-          snippet: msg.data.snippet || ''
-        });
-      } catch (err) {
-        console.error(`Error processing message ${message.id}:`, err);
-      }
-    }
-
-    return emails;
-  } catch (error) {
-    console.error('Fetch emails error:', error);
-    throw error;
-  }
-}
-
-// API Handler
 module.exports = async function handler(req, res) {
-  const { action } = req.query;
+  const action = req.query.action;
 
-  try {
-    if (action === 'auth') {
-      // OAuth URL 반환
-      const url = getAuthUrl();
-      return res.status(200).json({ url });
-    }
+  // CORS
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-    if (action === 'callback') {
-      // OAuth 콜백
-      const { code } = req.query;
-      if (!code) {
-        return res.status(400).json({ error: 'No code provided' });
-      }
-
-      const token = await getTokenFromCode(code);
-      // Canvas로 리다이렉트하면서 토큰 전달
-      return res.redirect(`/?token=${encodeURIComponent(token)}`);
-    }
-
-    if (action === 'emails') {
-      // 메일 조회
-      const { token } = req.query;
-      if (!token) {
-        return res.status(401).json({ error: 'No token provided' });
-      }
-
-      const emails = await fetchEmails(token);
-      return res.status(200).json({ emails });
-    }
-
-    return res.status(400).json({ error: 'Unknown action' });
-  } catch (error) {
-    console.error('API error:', error);
-    return res.status(500).json({ error: error.message });
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
   }
-}
+
+  // OAuth URL 생성
+  if (action === 'auth') {
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const redirectUri = `${process.env.REDIRECT_URI || 'https://reju-cs-dashboard.vercel.app'}/api/cs-gmail?action=callback`;
+    const scope = 'https://www.googleapis.com/auth/gmail.readonly';
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}`;
+    return res.json({ url: authUrl });
+  }
+
+  // OAuth 콜백
+  if (action === 'callback') {
+    const code = req.query.code;
+    const clientId = process.env.GOOGLE_CLIENT_ID;
+    const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+    const redirectUri = `${process.env.REDIRECT_URI || 'https://reju-cs-dashboard.vercel.app'}/api/cs-gmail?action=callback`;
+
+    try {
+      const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: `code=${code}&client_id=${clientId}&client_secret=${clientSecret}&redirect_uri=${encodeURIComponent(redirectUri)}&grant_type=authorization_code`
+      });
+
+      const tokenData = await tokenResponse.json();
+      const accessToken = tokenData.access_token;
+
+      if (accessToken) {
+        return res.redirect(`/?token=${encodeURIComponent(accessToken)}`);
+      } else {
+        return res.status(401).json({ error: 'Token exchange failed' });
+      }
+    } catch (error) {
+      return res.status(500).json({ error: error.message });
+    }
+  }
+
+  // Gmail 메일 조회
+  if (action === 'emails') {
+    const token = req.query.token;
+
+    if (!token) {
+      return res.status(401).json({ error: 'Missing token' });
+    }
+
+    try {
+      // Gmail API: INBOX 메일 조회
+      const mailResponse = await fetch(
+        'https://www.googleapis.com/gmail/v1/users/me/messages?q=from:global_md@drrejuall.com&maxResults=50',
+        {
+          headers: { 'Authorization': `Bearer ${token}` }
+        }
+      );
+
+      if (!mailResponse.ok) {
+        throw new Error(`Gmail API error: ${mailResponse.status}`);
+      }
+
+      const mailData = await mailResponse.json();
+      const messages = mailData.messages || [];
+
+      // 메시지 상세 조회
+      const emails = await Promise.all(
+        messages.slice(0, 20).map(async (msg) => {
+          try {
+            const msgResponse = await fetch(
+              `https://www.googleapis.com/gmail/v1/users/me/messages/${msg.id}`,
+              { headers: { 'Authorization': `Bearer ${token}` } }
+            );
+            const msgData = await msgResponse.json();
+            const headers = msgData.payload?.headers || [];
+
+            const getHeader = (name) => headers.find(h => h.name === name)?.value || '';
+            const subject = getHeader('Subject');
+            const from = getHeader('From');
+            const date = getHeader('Date');
+
+            // 간단한 파싱 (실제로는 더 정교해야 함)
+            const typeMap = {
+              '배송': ['배송', 'shipping', 'delivery', '운송'],
+              '인증': ['인증', 'verify', 'authentic'],
+              '제휴': ['제휴', 'partner', 'affiliate'],
+              '환불': ['환불', 'refund', 'return'],
+            };
+
+            let type = '기타';
+            for (const [t, keywords] of Object.entries(typeMap)) {
+              if (keywords.some(k => subject.toLowerCase().includes(k))) {
+                type = t;
+                break;
+              }
+            }
+
+            const labelMap = {
+              '긴급': ['urgent', '긴급', 'asap'],
+              '신규': ['new', '신규'],
+              'Follow-up': ['follow', '재', 'check']
+            };
+
+            let label = '신규';
+            for (const [l, keywords] of Object.entries(labelMap)) {
+              if (keywords.some(k => (subject + from).toLowerCase().includes(k))) {
+                label = l;
+                break;
+              }
+            }
+
+            const dateObj = new Date(date);
+            const dateStr = dateObj.toISOString().split('T')[0];
+
+            return {
+              id: msg.id,
+              date: dateStr,
+              customer: from.split('<')[0].trim() || '고객',
+              subject: subject || '(제목 없음)',
+              type: type,
+              label: label,
+              from: from
+            };
+          } catch (e) {
+            return null;
+          }
+        })
+      );
+
+      const validEmails = emails.filter(e => e !== null);
+      return res.json({ emails: validEmails });
+    } catch (error) {
+      console.error('Error:', error);
+      return res.status(500).json({ error: error.message });
+    }
+  }
+
+  return res.status(400).json({ error: 'Invalid action' });
+};

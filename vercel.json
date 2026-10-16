@@ -1,17 +1,12 @@
 {
+  "buildCommand": "",
+  "devCommand": "",
+  "outputDirectory": "public",
+  "framework": "static",
   "rewrites": [
     {
-      "source": "/",
-      "destination": "/public/index.html"
-    },
-    {
       "source": "/((?!api/).*)",
-      "destination": "/public/index.html"
+      "destination": "/index.html"
     }
-  ],
-  "functions": {
-    "api/**/*.js": {
-      "maxDuration": 60
-    }
-  }
+  ]
 }

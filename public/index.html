@@ -3,21 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CS 통합 대시보드</title>
+    <title>Dr.Reju-All CS Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body>
     <div id="root"></div>
     <script>
         const API_BASE = window.location.origin + '/api/cs-gmail';
-        const AUTH_ID = 'Josh';
+        const AUTH_ID = 'Dr.Reju-All';
         const AUTH_PW = 'rejuall';
+
         let gmailData = [];
         let token = localStorage.getItem('cs_gmail_token');
         let activeTab = 'type';
         let searchQuery = '';
         let isAuthenticated = sessionStorage.getItem('cs_auth') === '1';
 
+        // ===== 계산 함수 =====
         function typeCount() {
             return gmailData.reduce((acc, item) => {
                 acc[item.type] = (acc[item.type] || 0) + 1;
@@ -41,6 +43,7 @@
             );
         }
 
+        // ===== 색상 =====
         const typeColors = {
             '배송': 'bg-red-100 text-red-800',
             '인증': 'bg-yellow-100 text-yellow-800',
@@ -55,6 +58,7 @@
             'Follow-up': 'bg-orange-100 text-orange-800'
         };
 
+        // ===== 로그인 =====
         function handleAuthLogin() {
             const idInput = document.getElementById('auth_id').value.trim();
             const pwInput = document.getElementById('auth_pw').value.trim();
@@ -69,7 +73,20 @@
             }
         }
 
-        function handleAuthLogout() {
+        function handleGoogleLogin() {
+            try {
+                const response = fetch(`${API_BASE}?action=auth`);
+                response.then(r => r.json()).then(data => {
+                    if (data.url) {
+                        window.location.href = data.url;
+                    }
+                });
+            } catch (error) {
+                alert('Google 로그인 실패');
+            }
+        }
+
+        function handleLogout() {
             sessionStorage.removeItem('cs_auth');
             localStorage.removeItem('cs_gmail_token');
             isAuthenticated = false;
@@ -78,36 +95,17 @@
             render();
         }
 
-        async function handleLogin() {
-            try {
-                const response = await fetch(`${API_BASE}?action=auth`);
-                const data = await response.json();
-                if (data.url) {
-                    window.location.href = data.url;
-                } else {
-                    alert('Failed to get OAuth URL');
-                }
-            } catch (error) {
-                console.error('Login error:', error);
-                alert('Login failed: ' + error.message);
-            }
-        }
-
-        async function handleLogout() {
-            localStorage.removeItem('cs_gmail_token');
-            token = null;
-            gmailData = [];
-            render();
-        }
-
+        // ===== Gmail =====
         async function loadEmails() {
             if (!token) {
-                alert('Please login first');
+                alert('Gmail 연동이 필요합니다');
                 return;
             }
 
             try {
-                document.getElementById('loading').style.display = 'block';
+                const el = document.getElementById('loading');
+                if (el) el.style.display = 'block';
+
                 const response = await fetch(`${API_BASE}?action=emails&token=${encodeURIComponent(token)}`);
                 const data = await response.json();
 
@@ -115,19 +113,18 @@
                     gmailData = data.emails;
                     render();
                 } else if (data.error) {
-                    alert('Error: ' + data.error);
-                    if (data.error.includes('401') || data.error.includes('invalid')) {
-                        handleLogout();
-                    }
+                    alert('메일 로드 실패: ' + data.error);
                 }
             } catch (error) {
                 console.error('Load emails error:', error);
-                alert('Failed to load emails: ' + error.message);
+                alert('메일 로드 실패');
             } finally {
-                document.getElementById('loading').style.display = 'none';
+                const el = document.getElementById('loading');
+                if (el) el.style.display = 'none';
             }
         }
 
+        // ===== UI 제어 =====
         function switchTab(tab) {
             activeTab = tab;
             render();
@@ -138,43 +135,59 @@
             render();
         }
 
-        function renderAuthPage() {
+        // ===== 렌더링 =====
+        function renderLoginPage() {
             return `
-                <div class="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center p-6">
-                    <div class="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full">
+                <div class="min-h-screen bg-gradient-to-br from-teal-50 to-teal-100 flex items-center justify-center p-6">
+                    <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
                         <div class="text-center mb-8">
-                            <h1 class="text-3xl font-bold text-slate-900">CS 대시보드</h1>
-                            <p class="text-slate-600 mt-2">로그인해주세요</p>
+                            <div class="inline-block bg-teal-600 text-white rounded-lg p-3 mb-4">
+                                <span class="text-2xl">🧴</span>
+                            </div>
+                            <h1 class="text-3xl font-bold text-slate-900">Dr.Reju-All</h1>
+                            <p class="text-slate-600 mt-2">CS Dashboard</p>
                         </div>
 
-                        <div class="space-y-4">
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 mb-2">아이디</label>
-                                <input
-                                    type="text"
-                                    id="auth_id"
-                                    placeholder="아이디를 입력하세요"
-                                    class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                />
+                        <!-- 방식 1: ID/PW 로그인 -->
+                        <div class="mb-8 pb-8 border-b border-slate-200">
+                            <h3 class="font-bold text-slate-900 mb-4">방식 1: ID/PW 로그인</h3>
+                            <div class="space-y-3">
+                                <div>
+                                    <input
+                                        type="text"
+                                        id="auth_id"
+                                        placeholder="Dr.Reju-All"
+                                        class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+                                    />
+                                </div>
+                                <div>
+                                    <input
+                                        type="password"
+                                        id="auth_pw"
+                                        placeholder="비밀번호"
+                                        class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-teal-500"
+                                        onkeypress="if(event.key==='Enter') handleAuthLogin()"
+                                    />
+                                </div>
+                                <button
+                                    onclick="handleAuthLogin()"
+                                    class="w-full bg-teal-600 text-white py-2 rounded-lg hover:bg-teal-700 transition font-medium"
+                                >
+                                    로그인
+                                </button>
                             </div>
+                        </div>
 
-                            <div>
-                                <label class="block text-sm font-medium text-slate-700 mb-2">비밀번호</label>
-                                <input
-                                    type="password"
-                                    id="auth_pw"
-                                    placeholder="비밀번호를 입력하세요"
-                                    class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    onkeypress="if(event.key==='Enter') handleAuthLogin()"
-                                />
-                            </div>
-
+                        <!-- 방식 2: Google 로그인 -->
+                        <div>
+                            <h3 class="font-bold text-slate-900 mb-4">방식 2: Google Gmail 로그인</h3>
                             <button
-                                onclick="handleAuthLogin()"
+                                onclick="handleGoogleLogin()"
                                 class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition font-medium"
                             >
-                                로그인
+                                🔗 Gmail로 로그인
                             </button>
+                            <p class="text-xs text-slate-600 mt-2">(Neosimplix 계정)</p>
                         </div>
                     </div>
                 </div>
@@ -192,138 +205,110 @@
                         <!-- 헤더 -->
                         <div class="flex justify-between items-center mb-8">
                             <div>
-                                <h1 class="text-3xl font-bold text-slate-900">CS 통합 대시보드</h1>
-                                <p class="text-slate-600 mt-1">Gmail + GitHub 중앙 통합 관리</p>
+                                <h1 class="text-3xl font-bold text-slate-900">Dr.Reju-All CS Dashboard</h1>
+                                <p class="text-slate-600 mt-1">CS 메일 중앙 통합 관리</p>
                             </div>
-                            <button onclick="handleAuthLogout()" class="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition">
-                                <span>🚪</span>
-                                <span class="text-sm font-medium">로그아웃</span>
+                            <button onclick="handleLogout()" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700">
+                                🚪 로그아웃
                             </button>
                         </div>
 
                         <!-- Gmail 섹션 -->
                         <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
-                            <div class="flex items-center gap-2 mb-6">
-                                <span class="text-2xl">📧</span>
-                                <h2 class="text-xl font-bold">global_md@drrejuall.com</h2>
-                                <span class="ml-auto text-sm text-slate-600">${gmailData.length}개 이메일</span>
+                            <div class="flex items-center justify-between mb-6">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-2xl">📧</span>
+                                    <h2 class="text-xl font-bold">global_md@drrejuall.com</h2>
+                                    <span class="text-sm text-slate-600">${gmailData.length}개 이메일</span>
+                                </div>
+                                <button onclick="loadEmails()" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
+                                    🔄 새로고침
+                                </button>
                             </div>
 
-                            ${token ? `
-                                <!-- Loading -->
-                                <div id="loading" style="display: none;" class="text-center py-8">
-                                    <div class="text-slate-600">로딩 중...</div>
+                            <div id="loading" style="display: none;" class="text-center py-8 text-slate-600">로딩 중...</div>
+
+                            ${gmailData.length > 0 ? `
+                                <!-- 탭 -->
+                                <div class="flex gap-4 mb-6 border-b border-slate-200">
+                                    <button onclick="switchTab('type')" class="px-4 py-2 font-medium transition ${activeTab === 'type' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600'}">
+                                        📊 유형별
+                                    </button>
+                                    <button onclick="switchTab('label')" class="px-4 py-2 font-medium transition ${activeTab === 'label' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600'}">
+                                        🏷️ 라벨별
+                                    </button>
                                 </div>
 
-                                ${gmailData.length > 0 ? `
-                                    <!-- 탭 -->
-                                    <div class="flex gap-4 mb-6 border-b border-slate-200">
-                                        <button onclick="switchTab('type')" class="px-4 py-2 font-medium transition ${activeTab === 'type' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 hover:text-slate-900'}">
-                                            📊 유형별
-                                        </button>
-                                        <button onclick="switchTab('label')" class="px-4 py-2 font-medium transition ${activeTab === 'label' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-slate-600 hover:text-slate-900'}">
-                                            🏷️ 라벨별
-                                        </button>
-                                    </div>
+                                <!-- 카운트 카드 -->
+                                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+                                    ${activeTab === 'type'
+                                        ? Object.entries(tc).map(([type, count]) => `
+                                            <div class="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                                                <div class="text-2xl font-bold text-slate-900">${count}</div>
+                                                <div class="text-sm text-slate-600 mt-1">${type}</div>
+                                            </div>
+                                        `).join('')
+                                        : Object.entries(lc).map(([label, count]) => `
+                                            <div class="bg-slate-50 rounded-lg p-4 border border-slate-200">
+                                                <div class="text-2xl font-bold text-slate-900">${count}</div>
+                                                <div class="text-sm text-slate-600 mt-1">${label}</div>
+                                            </div>
+                                        `).join('')
+                                    }
+                                </div>
 
-                                    <!-- 카운트 카드 -->
-                                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                                        ${activeTab === 'type'
-                                            ? Object.entries(tc).map(([type, count]) => `
-                                                <div class="bg-slate-50 rounded-lg p-4 border border-slate-200">
-                                                    <div class="text-2xl font-bold text-slate-900">${count}</div>
-                                                    <div class="text-sm text-slate-600 mt-1">${type}</div>
-                                                </div>
-                                            `).join('')
-                                            : Object.entries(lc).map(([label, count]) => `
-                                                <div class="bg-slate-50 rounded-lg p-4 border border-slate-200">
-                                                    <div class="text-2xl font-bold text-slate-900">${count}</div>
-                                                    <div class="text-sm text-slate-600 mt-1">${label}</div>
-                                                </div>
-                                            `).join('')
-                                        }
-                                    </div>
+                                <!-- 검색 -->
+                                <div class="mb-6">
+                                    <input
+                                        type="text"
+                                        placeholder="🔍 고객명/주제 검색..."
+                                        value="${searchQuery}"
+                                        onkeyup="updateSearch(this.value)"
+                                        class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
 
-                                    <!-- 검색 -->
-                                    <div class="mb-6">
-                                        <div class="relative">
-                                            <span class="absolute left-3 top-3 text-slate-400">🔍</span>
-                                            <input
-                                                type="text"
-                                                placeholder="고객명/주제 검색..."
-                                                value="${searchQuery}"
-                                                onkeyup="updateSearch(this.value)"
-                                                class="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <!-- 테이블 -->
-                                    <div class="overflow-x-auto">
-                                        <table class="w-full text-sm">
-                                            <thead class="border-b border-slate-200">
-                                                <tr class="text-left text-slate-600 font-semibold">
-                                                    <th class="pb-3 px-4">날짜</th>
-                                                    <th class="pb-3 px-4">고객명</th>
-                                                    <th class="pb-3 px-4">주제</th>
-                                                    <th class="pb-3 px-4">유형</th>
-                                                    <th class="pb-3 px-4">라벨</th>
+                                <!-- 테이블 -->
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-sm">
+                                        <thead class="border-b border-slate-200">
+                                            <tr class="text-left text-slate-600 font-semibold">
+                                                <th class="pb-3 px-4">날짜</th>
+                                                <th class="pb-3 px-4">고객명</th>
+                                                <th class="pb-3 px-4">주제</th>
+                                                <th class="pb-3 px-4">유형</th>
+                                                <th class="pb-3 px-4">라벨</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${fd.map(item => `
+                                                <tr class="border-b border-slate-100 hover:bg-slate-50">
+                                                    <td class="py-3 px-4 text-slate-600">${item.date}</td>
+                                                    <td class="py-3 px-4 font-medium text-slate-900">${item.customer}</td>
+                                                    <td class="py-3 px-4 text-slate-700">${item.subject}</td>
+                                                    <td class="py-3 px-4">
+                                                        <span class="px-3 py-1 rounded-full text-xs font-medium ${typeColors[item.type]}">
+                                                            ${item.type}
+                                                        </span>
+                                                    </td>
+                                                    <td class="py-3 px-4">
+                                                        <span class="px-3 py-1 rounded-full text-xs font-medium ${labelColors[item.label]}">
+                                                            ${item.label}
+                                                        </span>
+                                                    </td>
                                                 </tr>
-                                            </thead>
-                                            <tbody>
-                                                ${fd.map(item => `
-                                                    <tr class="border-b border-slate-100 hover:bg-slate-50 transition cursor-pointer">
-                                                        <td class="py-3 px-4 text-slate-600">${item.date}</td>
-                                                        <td class="py-3 px-4 font-medium text-slate-900">${item.customer}</td>
-                                                        <td class="py-3 px-4 text-slate-700">${item.subject}</td>
-                                                        <td class="py-3 px-4">
-                                                            <span class="px-3 py-1 rounded-full text-xs font-medium ${typeColors[item.type]}">
-                                                                ${item.type}
-                                                            </span>
-                                                        </td>
-                                                        <td class="py-3 px-4">
-                                                            <span class="px-3 py-1 rounded-full text-xs font-medium ${labelColors[item.label]}">
-                                                                ${item.label}
-                                                            </span>
-                                                        </td>
-                                                    </tr>
-                                                `).join('')}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                ` : `
-                                    <div class="text-center py-12">
-                                        <div class="flex gap-2 justify-center mb-4">
-                                            <button onclick="loadEmails()" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
-                                                📧 메일 로드
-                                            </button>
-                                            <button onclick="handleLogin()" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700">
-                                                🔗 Gmail 연동
-                                            </button>
-                                        </div>
-                                        <p class="text-slate-600">로그인 후 Gmail 메일을 불러옵니다</p>
-                                    </div>
-                                `}
+                                            `).join('')}
+                                        </tbody>
+                                    </table>
+                                </div>
                             ` : `
                                 <div class="text-center py-12">
-                                    <p class="text-slate-600 mb-4">Gmail 연동이 필요합니다</p>
-                                    <button onclick="handleLogin()" class="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 text-lg font-medium">
-                                        📧 Gmail로 연동하기
+                                    <p class="text-slate-600 mb-4">아직 메일 데이터가 없습니다</p>
+                                    <button onclick="loadEmails()" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
+                                        📧 메일 로드
                                     </button>
                                 </div>
                             `}
-                        </div>
-
-                        <!-- GitHub 섹션 -->
-                        <div class="bg-white rounded-lg shadow-lg p-6 border-2 border-dashed border-slate-300">
-                            <div class="flex items-center gap-2 mb-4">
-                                <span class="text-2xl">🔗</span>
-                                <h2 class="text-xl font-bold">GitHub Issues & PRs</h2>
-                                <span class="ml-auto px-3 py-1 bg-yellow-100 text-yellow-800 text-xs font-medium rounded">
-                                    준비 중
-                                </span>
-                            </div>
-                            <p class="text-slate-600">GitHub 연동 준비 중입니다. 계정/레포지토리를 설정하면 이슈와 PR을 통합으로 표시합니다.</p>
                         </div>
                     </div>
                 </div>
@@ -332,13 +317,13 @@
 
         function render() {
             if (!isAuthenticated) {
-                document.getElementById('root').innerHTML = renderAuthPage();
+                document.getElementById('root').innerHTML = renderLoginPage();
             } else {
                 document.getElementById('root').innerHTML = renderDashboard();
             }
         }
 
-        // URL 쿼리에서 토큰 처리 (OAuth 콜백)
+        // ===== OAuth 콜백 =====
         window.addEventListener('load', async () => {
             const urlParams = new URLSearchParams(window.location.search);
             const urlToken = urlParams.get('token');
@@ -346,12 +331,15 @@
             if (urlToken) {
                 localStorage.setItem('cs_gmail_token', urlToken);
                 token = urlToken;
+                sessionStorage.setItem('cs_auth', '1');
+                isAuthenticated = true;
                 window.history.replaceState({}, document.title, window.location.pathname);
                 alert('Gmail 연동 성공!');
+                render();
                 loadEmails();
+            } else {
+                render();
             }
-
-            render();
         });
     </script>
 </body>
