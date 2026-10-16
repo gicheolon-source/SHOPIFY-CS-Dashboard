@@ -10,10 +10,13 @@
     <div id="root"></div>
     <script>
         const API_BASE = window.location.origin + '/api/cs-gmail';
+        const AUTH_ID = 'Josh';
+        const AUTH_PW = 'rejuall';
         let gmailData = [];
         let token = localStorage.getItem('cs_gmail_token');
         let activeTab = 'type';
         let searchQuery = '';
+        let isAuthenticated = sessionStorage.getItem('cs_auth') === '1';
 
         function typeCount() {
             return gmailData.reduce((acc, item) => {
@@ -51,6 +54,29 @@
             '신규': 'bg-purple-100 text-purple-800',
             'Follow-up': 'bg-orange-100 text-orange-800'
         };
+
+        function handleAuthLogin() {
+            const idInput = document.getElementById('auth_id').value.trim();
+            const pwInput = document.getElementById('auth_pw').value.trim();
+
+            if (idInput === AUTH_ID && pwInput === AUTH_PW) {
+                sessionStorage.setItem('cs_auth', '1');
+                isAuthenticated = true;
+                render();
+                loadEmails();
+            } else {
+                alert('아이디 또는 비밀번호가 틀렸습니다.');
+            }
+        }
+
+        function handleAuthLogout() {
+            sessionStorage.removeItem('cs_auth');
+            localStorage.removeItem('cs_gmail_token');
+            isAuthenticated = false;
+            token = null;
+            gmailData = [];
+            render();
+        }
 
         async function handleLogin() {
             try {
@@ -112,12 +138,55 @@
             render();
         }
 
-        function render() {
+        function renderAuthPage() {
+            return `
+                <div class="min-h-screen bg-gradient-to-br from-blue-50 to-blue-100 flex items-center justify-center p-6">
+                    <div class="bg-white rounded-lg shadow-2xl p-8 max-w-md w-full">
+                        <div class="text-center mb-8">
+                            <h1 class="text-3xl font-bold text-slate-900">CS 대시보드</h1>
+                            <p class="text-slate-600 mt-2">로그인해주세요</p>
+                        </div>
+
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-2">아이디</label>
+                                <input
+                                    type="text"
+                                    id="auth_id"
+                                    placeholder="아이디를 입력하세요"
+                                    class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label class="block text-sm font-medium text-slate-700 mb-2">비밀번호</label>
+                                <input
+                                    type="password"
+                                    id="auth_pw"
+                                    placeholder="비밀번호를 입력하세요"
+                                    class="w-full px-4 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    onkeypress="if(event.key==='Enter') handleAuthLogin()"
+                                />
+                            </div>
+
+                            <button
+                                onclick="handleAuthLogin()"
+                                class="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition font-medium"
+                            >
+                                로그인
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderDashboard() {
             const tc = typeCount();
             const lc = labelCount();
             const fd = filteredData();
 
-            const html = `
+            return `
                 <div class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 p-6">
                     <div class="max-w-7xl mx-auto">
                         <!-- 헤더 -->
@@ -126,34 +195,21 @@
                                 <h1 class="text-3xl font-bold text-slate-900">CS 통합 대시보드</h1>
                                 <p class="text-slate-600 mt-1">Gmail + GitHub 중앙 통합 관리</p>
                             </div>
-                            <div class="flex gap-2">
-                                ${token ? `
-                                    <button onclick="loadEmails()" class="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
-                                        <span>🔄</span>
-                                        <span class="text-sm font-medium">새로고침</span>
-                                    </button>
-                                    <button onclick="handleLogout()" class="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition">
-                                        <span>🚪</span>
-                                        <span class="text-sm font-medium">로그아웃</span>
-                                    </button>
-                                ` : `
-                                    <button onclick="handleLogin()" class="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition">
-                                        <span>📧</span>
-                                        <span class="text-sm font-medium">Gmail 연동</span>
-                                    </button>
-                                `}
-                            </div>
+                            <button onclick="handleAuthLogout()" class="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition">
+                                <span>🚪</span>
+                                <span class="text-sm font-medium">로그아웃</span>
+                            </button>
                         </div>
 
-                        ${token ? `
-                            <!-- Gmail 섹션 -->
-                            <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
-                                <div class="flex items-center gap-2 mb-6">
-                                    <span class="text-2xl">📧</span>
-                                    <h2 class="text-xl font-bold">global_md@drrejuall.com</h2>
-                                    <span class="ml-auto text-sm text-slate-600">${gmailData.length}개 이메일</span>
-                                </div>
+                        <!-- Gmail 섹션 -->
+                        <div class="bg-white rounded-lg shadow-lg p-6 mb-6">
+                            <div class="flex items-center gap-2 mb-6">
+                                <span class="text-2xl">📧</span>
+                                <h2 class="text-xl font-bold">global_md@drrejuall.com</h2>
+                                <span class="ml-auto text-sm text-slate-600">${gmailData.length}개 이메일</span>
+                            </div>
 
+                            ${token ? `
                                 <!-- Loading -->
                                 <div id="loading" style="display: none;" class="text-center py-8">
                                     <div class="text-slate-600">로딩 중...</div>
@@ -237,26 +293,29 @@
                                     </div>
                                 ` : `
                                     <div class="text-center py-12">
-                                        <p class="text-slate-600 mb-4">아직 메일 데이터가 없습니다</p>
-                                        <button onclick="loadEmails()" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
-                                            메일 로드
-                                        </button>
+                                        <div class="flex gap-2 justify-center mb-4">
+                                            <button onclick="loadEmails()" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700">
+                                                📧 메일 로드
+                                            </button>
+                                            <button onclick="handleLogin()" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700">
+                                                🔗 Gmail 연동
+                                            </button>
+                                        </div>
+                                        <p class="text-slate-600">로그인 후 Gmail 메일을 불러옵니다</p>
                                     </div>
                                 `}
-                            </div>
-                        ` : `
-                            <!-- 로그인 안 함 -->
-                            <div class="bg-white rounded-lg shadow-lg p-12 text-center">
-                                <h2 class="text-2xl font-bold text-slate-900 mb-4">Gmail 연동이 필요합니다</h2>
-                                <p class="text-slate-600 mb-8">global_md@drrejuall.com의 CS 메일을 자동으로 분류하고 관리합니다.</p>
-                                <button onclick="handleLogin()" class="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 text-lg font-medium">
-                                    📧 Gmail로 연동하기
-                                </button>
-                            </div>
-                        `}
+                            ` : `
+                                <div class="text-center py-12">
+                                    <p class="text-slate-600 mb-4">Gmail 연동이 필요합니다</p>
+                                    <button onclick="handleLogin()" class="bg-blue-600 text-white px-8 py-3 rounded-lg hover:bg-blue-700 text-lg font-medium">
+                                        📧 Gmail로 연동하기
+                                    </button>
+                                </div>
+                            `}
+                        </div>
 
                         <!-- GitHub 섹션 -->
-                        <div class="bg-white rounded-lg shadow-lg p-6 border-2 border-dashed border-slate-300 mt-6">
+                        <div class="bg-white rounded-lg shadow-lg p-6 border-2 border-dashed border-slate-300">
                             <div class="flex items-center gap-2 mb-4">
                                 <span class="text-2xl">🔗</span>
                                 <h2 class="text-xl font-bold">GitHub Issues & PRs</h2>
@@ -269,8 +328,14 @@
                     </div>
                 </div>
             `;
+        }
 
-            document.getElementById('root').innerHTML = html;
+        function render() {
+            if (!isAuthenticated) {
+                document.getElementById('root').innerHTML = renderAuthPage();
+            } else {
+                document.getElementById('root').innerHTML = renderDashboard();
+            }
         }
 
         // URL 쿼리에서 토큰 처리 (OAuth 콜백)
