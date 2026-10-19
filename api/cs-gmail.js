@@ -13,7 +13,7 @@ module.exports = async function handler(req, res) {
   // OAuth URL 생성
   if (action === 'auth') {
     const clientId = process.env.GOOGLE_CLIENT_ID;
-    const redirectUri = `${process.env.REDIRECT_URI || 'https://reju-cs-dashboard.vercel.app'}/api/cs-gmail?action=callback`;
+    const redirectUri = `${process.env.REDIRECT_URI || 'https://shopify-cs-dashboard.vercel.app'}/api/cs-gmail?action=callback`;
     const scope = 'https://www.googleapis.com/auth/gmail.readonly';
     const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}`;
     return res.json({ url: authUrl });
@@ -24,7 +24,7 @@ module.exports = async function handler(req, res) {
     const code = req.query.code;
     const clientId = process.env.GOOGLE_CLIENT_ID;
     const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-    const redirectUri = `${process.env.REDIRECT_URI || 'https://reju-cs-dashboard.vercel.app'}/api/cs-gmail?action=callback`;
+    const redirectUri = `${process.env.REDIRECT_URI || 'https://shopify-cs-dashboard.vercel.app'}/api/cs-gmail?action=callback`;
 
     try {
       const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
