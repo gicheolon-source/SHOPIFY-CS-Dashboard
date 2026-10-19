@@ -1,8 +1,5 @@
 {
-  "buildCommand": "",
-  "devCommand": "",
   "outputDirectory": "public",
-  "framework": "static",
   "rewrites": [
     {
       "source": "/((?!api/).*)",
