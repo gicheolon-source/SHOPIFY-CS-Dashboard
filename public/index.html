@@ -95,29 +95,42 @@
             render();
         }
 
+        // ===== 샘플 데이터 =====
+        const SAMPLE_EMAILS = [
+            { date: '2026-10-10', type: '배송', label: '긴급', customer: 'Jane Lee', subject: 'Order #577451 not shipped', snippet: 'Stuck since June 27...' },
+            { date: '2026-10-08', type: '인증', label: '신규', customer: 'Jane Lee', subject: 'Product authenticity check', snippet: 'Comparing with website...' },
+            { date: '2026-10-05', type: '제휴', label: 'Follow-up', customer: 'Lea Williams', subject: 'Spark codes issue', snippet: 'GMV requirements...' },
+            { date: '2026-09-28', type: '배송', label: '신규', customer: 'Customer XYZ', subject: 'Delivery delay', snippet: 'Package delayed...' },
+            { date: '2026-09-25', type: '환불', label: '긴급', customer: 'Customer ABC', subject: 'Refund request', snippet: 'Product damaged...' },
+            { date: '2026-09-20', type: '배송', label: 'Follow-up', customer: 'John Doe', subject: 'Where is my order', snippet: 'No tracking update...' },
+            { date: '2026-09-15', type: '기타', label: '신규', customer: 'Sarah Smith', subject: 'General inquiry', snippet: 'Question about products...' },
+            { date: '2026-09-10', type: '배송', label: '긴급', customer: 'Mike Johnson', subject: 'Order cancelled by mistake', snippet: 'Please restore order...' }
+        ];
+
         // ===== Gmail =====
         async function loadEmails() {
-            if (!token) {
-                alert('Gmail 연동이 필요합니다');
-                return;
-            }
-
             try {
                 const el = document.getElementById('loading');
                 if (el) el.style.display = 'block';
 
-                const response = await fetch(`${API_BASE}?action=emails&token=${encodeURIComponent(token)}`);
-                const data = await response.json();
-
-                if (data.emails) {
-                    gmailData = data.emails;
-                    render();
-                } else if (data.error) {
-                    alert('메일 로드 실패: ' + data.error);
+                if (token) {
+                    // Gmail 연동시: 실제 데이터
+                    const response = await fetch(`${API_BASE}?action=emails&token=${encodeURIComponent(token)}`);
+                    const data = await response.json();
+                    if (data.emails) {
+                        gmailData = data.emails;
+                    } else {
+                        gmailData = SAMPLE_EMAILS;
+                    }
+                } else {
+                    // Gmail 미연동: 샘플 데이터
+                    gmailData = SAMPLE_EMAILS;
                 }
+                render();
             } catch (error) {
                 console.error('Load emails error:', error);
-                alert('메일 로드 실패');
+                gmailData = SAMPLE_EMAILS;
+                render();
             } finally {
                 const el = document.getElementById('loading');
                 if (el) el.style.display = 'none';
