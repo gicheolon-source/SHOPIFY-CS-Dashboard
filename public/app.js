@@ -3,11 +3,11 @@
   'use strict';
 
   const STATUSES = ['미처리', '진행중', '답변완료', '종결'];
-  const TYPES = ['배송', '교환/환불', '제품 문의', '주문/결제', '피부 트러블', '제휴/인플루언서', 'B2B/도매', '스팸/광고', '기타'];
+  const TYPES = ['배송', '교환/환불', '제품 문의', '주문/결제', '피부 트러블', '정품 인증', '제휴/인플루언서', 'B2B/도매', '스팸/광고', '기타'];
   const PRIORITIES = ['긴급', '보통', '낮음'];
   const OPEN = new Set(['미처리', '진행중']);
   const STATUS_CHIP = { 미처리: 'danger', 진행중: 'warn', 답변완료: 'ok', 종결: '' };
-  const TYPE_CHIP = { 배송: 'info', '교환/환불': 'warn', '피부 트러블': 'danger', '제휴/인플루언서': 'accent', 'B2B/도매': 'accent' };
+  const TYPE_CHIP = { 배송: 'info', '교환/환불': 'warn', '피부 트러블': 'danger', '정품 인증': 'warn', '제휴/인플루언서': 'accent', 'B2B/도매': 'accent' };
 
   const S = {
     me: null,
