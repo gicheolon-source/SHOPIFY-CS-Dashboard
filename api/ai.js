@@ -10,11 +10,12 @@ module.exports = handler(async (req, res) => {
   if (req.method !== 'POST') throw new HttpError(405, 'POST만 지원합니다');
   const { action, id, instruction, template } = await body(req);
   if (action !== 'draft' || !id) throw new HttpError(400, '알 수 없는 요청');
-  const [thread, ticket, settings, ourEmails] = await Promise.all([gmail.threadFull(id), tickets.getTicket(id), getSettings(), tickets.ourEmails()]);
+  const [{ thread, ticket }, settings, ourEmails] = await Promise.all([tickets.conversation(id), getSettings(), tickets.ourEmails()]);
   if (!ticket) throw new HttpError(404, '티켓을 찾을 수 없습니다');
   const [shop, related] = await Promise.all([
     shopify.lookup({ email: ticket.customer?.email, orderRefs: ticket.orderRefs || [] }).catch(() => ({ orders: [] })),
-    gmail.findRelated(id, { orderRefs: ticket.orderRefs || [], email: ticket.customer?.email }).catch(() => []),
+    // 이미 대화에 합쳐진 스레드는 빼고 찾는다
+    gmail.findRelated([id, ...(ticket.related || [])], { orderRefs: ticket.orderRefs || [], email: ticket.customer?.email }).catch(() => []),
   ]);
   const draft = await ai.draftReply({
     thread,

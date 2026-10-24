@@ -270,11 +270,11 @@
       return;
     }
     $('#list').innerHTML = list.map((t) => `
-      <article class="item ${t.id === S.selected ? 'selected' : ''} ${t.unread ? 'unread' : ''}" data-action="open" data-id="${esc(t.id)}">
+      <article class="item ${t.id === S.selected ? 'selected' : ''} ${t.unread || t.groupUnread ? 'unread' : ''}" data-action="open" data-id="${esc(t.id)}">
         <div class="top">
           <span class="dot ${esc(t.priority || '')}" title="우선순위 ${esc(t.priority || '-')}"></span>
           <span class="who">${esc(t.customer?.name || t.customer?.email)}</span>
-          ${t.messageCount > 1 ? `<span class="hint">${t.messageCount}</span>` : ''}
+          ${(t.groupMessages || t.messageCount) > 1 ? `<span class="hint" title="${t.related?.length ? `따로 온 메일 ${t.related.length + 1}건을 하나로 묶음` : ''}">${t.groupMessages || t.messageCount}</span>` : ''}
           <span class="time" title="${esc(fullDate(t.lastAt))}">${ago(t.lastAt)}</span>
         </div>
         <div class="subj">${esc(t.subject)}</div>
@@ -308,7 +308,7 @@
       S.detail = detail.value;
       if (detail.value.ticket) mergeTicket(detail.value.ticket);
       const t = S.tickets.find((x) => x.id === id);
-      if (t) t.unread = false;
+      if (t) Object.assign(t, { unread: false, groupUnread: false });
     } else {
       S.detail = { error: detail.reason.message };
       if (detail.reason.code === 'THREAD_GONE') S.tickets = S.tickets.filter((x) => x.id !== id);
@@ -591,9 +591,12 @@
   }
 
   // ---------- 동기화 ----------
+  // 같은 고객의 같은 제목 메일은 서버에서 대표 티켓 하나로 묶인다 → 나머지는 목록에서 숨김
+  const visible = (list) => list.filter((t) => !t.groupId);
+
   async function loadTickets() {
     const d = await api('/api/threads');
-    S.tickets = d.tickets;
+    S.tickets = visible(d.tickets);
     S.syncedAt = d.syncedAt;
     S.syncedBy = d.syncedBy;
   }
@@ -609,7 +612,7 @@
     if (S.view === 'inbox') renderList();
     try {
       const d = await api('/api/threads', { method: 'POST', body: { action: 'sync' } });
-      S.tickets = d.tickets;
+      S.tickets = visible(d.tickets);
       S.syncedAt = d.syncedAt;
       if (!quiet) toast(d.classified ? `동기화 완료 · 새 문의 ${d.classified}건 분류` : '동기화 완료');
     } catch (err) {
