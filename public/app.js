@@ -311,6 +311,7 @@
       if (t) t.unread = false;
     } else {
       S.detail = { error: detail.reason.message };
+      if (detail.reason.code === 'THREAD_GONE') S.tickets = S.tickets.filter((x) => x.id !== id);
     }
     S.orders = orders.status === 'fulfilled' ? orders.value : { error: orders.reason.message };
     renderList();
