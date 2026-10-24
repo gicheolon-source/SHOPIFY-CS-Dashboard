@@ -12,11 +12,15 @@ module.exports = handler(async (req, res) => {
   if (action !== 'draft' || !id) throw new HttpError(400, '알 수 없는 요청');
   const [thread, ticket, settings, ourEmails] = await Promise.all([gmail.threadFull(id), tickets.getTicket(id), getSettings(), tickets.ourEmails()]);
   if (!ticket) throw new HttpError(404, '티켓을 찾을 수 없습니다');
-  const shop = await shopify.lookup({ email: ticket.customer?.email, orderRefs: ticket.orderRefs || [] }).catch(() => ({ orders: [] }));
+  const [shop, related] = await Promise.all([
+    shopify.lookup({ email: ticket.customer?.email, orderRefs: ticket.orderRefs || [] }).catch(() => ({ orders: [] })),
+    gmail.findRelated(id, { orderRefs: ticket.orderRefs || [], email: ticket.customer?.email }).catch(() => []),
+  ]);
   const draft = await ai.draftReply({
     thread,
     ticket,
     orders: shop.orders,
+    related,
     settings,
     ourEmails,
     instruction: String(instruction || '').slice(0, 1000),
