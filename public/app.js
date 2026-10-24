@@ -388,6 +388,8 @@
     }));
     const box = $('#reply-box');
     if (box) box.addEventListener('input', () => { S.composer.text = box.value; });
+    const pick = $('#tpl-pick');
+    if (pick) pick.addEventListener('change', () => { if (pick.value) insertTemplate(pick.value); });
     const ins = $('#ai-instruction');
     if (ins) {
       ins.addEventListener('input', () => { S.composer.instruction = ins.value; });
@@ -428,6 +430,7 @@
             <input class="input" id="ai-instruction" placeholder="AI에게 요청 (선택) 예: 교환 가능하다고 안내, 송장번호 포함" value="${esc(c.instruction)}">
             <button class="btn" data-action="draft" ${c.loading ? 'disabled' : ''}>${c.loading ? '<span class="spin"></span> 작성 중' : `${icon.spark} AI 초안`}</button>
           </div>
+          ${templatePicker(t)}
           ${c.notes ? `<div class="notes"><b>확인할 것</b>\n${esc(c.notes)}</div>` : ''}
           <textarea class="textarea reply-box" id="reply-box" placeholder="답장을 입력하거나 AI 초안을 생성하세요">${esc(c.text)}</textarea>
           ${c.ko ? `<details class="translation" open><summary><b>한국어 번역</b> (참고용, 발송되지 않음)</summary>\n${esc(c.ko)}</details>` : ''}
@@ -439,6 +442,56 @@
           </div>
         </div>
       </div>`;
+  }
+
+  // ---------- 자주 쓰는 답변 ----------
+  function templatePicker(t) {
+    const list = S.settings?.templates || [];
+    if (!list.length) return '';
+    const opt = (x) => `<option value="${esc(x.id)}">${esc(x.title)}</option>`;
+    const recommended = list.filter((x) => (x.types || []).includes(t.type));
+    const cats = [...new Set(list.map((x) => x.cat))];
+    return `
+      <div class="tpl-row">
+        <select class="select" id="tpl-pick">
+          <option value="">자주 쓰는 답변 넣기…</option>
+          ${recommended.length ? `<optgroup label="추천 · ${esc(t.type)}">${recommended.map(opt).join('')}</optgroup>` : ''}
+          ${cats.map((cat) => `<optgroup label="${esc(cat)}">${list.filter((x) => x.cat === cat).map(opt).join('')}</optgroup>`).join('')}
+        </select>
+        <span class="hint">[확인 필요: …] 부분은 보내기 전에 채워 주세요</span>
+      </div>`;
+  }
+
+  function fillTemplate(body, t) {
+    const first = (t.customer?.name || '').trim().split(/\s+/)[0];
+    const name = first && !/@/.test(first) ? first : 'there';
+    return body
+      .replace(/\{name\}/g, name)
+      .replace(/\{order\}/g, t.orderRefs?.[0] || '[주문번호]')
+      .replace(/\{signature\}/g, S.settings?.signature || '');
+  }
+
+  function insertTemplate(id) {
+    const t = S.tickets.find((x) => x.id === S.selected);
+    const tpl = (S.settings?.templates || []).find((x) => x.id === id);
+    if (!t || !tpl) return;
+    const text = fillTemplate(tpl.body, t);
+    const box = $('#reply-box');
+    const current = (box ? box.value : S.composer.text).trim();
+    if (current && !confirm('작성 중인 답장을 이 템플릿으로 바꿀까요?\n(취소하면 아래에 이어 붙입니다)')) {
+      S.composer.text = `${current}\n\n${text}`;
+    } else {
+      S.composer.text = text;
+    }
+    Object.assign(S.composer, { ko: '', notes: '' });
+    renderDetail();
+    $('#reply-box')?.focus();
+  }
+
+  async function loadSettings() {
+    try {
+      S.settings = await api('/api/settings');
+    } catch {}
   }
 
   function renderOrders() {
@@ -739,7 +792,40 @@
             </div>
           </div>
         </div>
+        <div class="card tpl-card">
+          <div class="card-h">자주 쓰는 답변
+            <span class="hint">· {name} 고객 이름 · {order} 주문번호 · {signature} 서명 · [확인 필요: …]는 보낼 때 채우기</span>
+            <span class="spacer"></span>
+            <button class="btn sm" data-action="tpl-add">+ 답변 추가</button>
+          </div>
+          <div id="tpl-list">${(st.templates || []).map((x) => templateEditor(x)).join('')}</div>
+          <div class="tpl-foot"><span class="hint">답장 작성창의 '자주 쓰는 답변 넣기'에 나오고, AI 초안도 이 답변들을 참고합니다.</span><button class="btn primary" data-action="save-settings">저장</button></div>
+        </div>
       </div></div>`;
+  }
+
+  function templateEditor(x, open = false) {
+    return `
+      <details class="tpl-item" data-id="${esc(x.id || '')}" ${open ? 'open' : ''}>
+        <summary><span class="chip">${esc(x.cat)}</span> ${esc(x.title)}</summary>
+        <div class="tpl-fields">
+          <input class="input tpl-cat" value="${esc(x.cat)}" placeholder="분류 (예: 제품 FAQ)">
+          <input class="input tpl-title" value="${esc(x.title)}" placeholder="제목">
+          <input class="input tpl-types" value="${esc((x.types || []).join(', '))}" placeholder="추천할 문의 유형 (예: 배송, 교환/환불)">
+          <button class="btn sm ghost danger" data-action="tpl-del">삭제</button>
+        </div>
+        <textarea class="textarea tpl-body">${esc(x.body)}</textarea>
+      </details>`;
+  }
+
+  function collectTemplates() {
+    return [...document.querySelectorAll('#tpl-list .tpl-item')].map((el) => ({
+      id: el.dataset.id,
+      cat: el.querySelector('.tpl-cat').value,
+      title: el.querySelector('.tpl-title').value,
+      types: el.querySelector('.tpl-types').value.split(',').map((s) => s.trim()).filter(Boolean),
+      body: el.querySelector('.tpl-body').value,
+    }));
   }
 
   async function saveSettings() {
@@ -751,8 +837,10 @@
           aliases: $('#s-aliases').value.split(',').map((s) => s.trim()).filter(Boolean),
           guide: $('#s-guide').value,
           signature: $('#s-signature').value,
+          templates: collectTemplates(),
         },
       });
+      $('#tpl-list').innerHTML = (S.settings.templates || []).map((x) => templateEditor(x)).join('');
       toast('설정을 저장했습니다');
     } catch (err) {
       toast(err.message, 'error');
@@ -797,6 +885,13 @@
       S.days = Number(el.dataset.days);
       renderStats();
     } else if (a === 'save-settings') saveSettings();
+    else if (a === 'tpl-add') {
+      $('#tpl-list').insertAdjacentHTML('beforeend', templateEditor({ cat: '기타', title: '새 답변', body: 'Hi {name},\n\n\n\n{signature}', types: [] }, true));
+      $('#tpl-list .tpl-item:last-child .tpl-title').select();
+    } else if (a === 'tpl-del') {
+      const item = el.closest('.tpl-item');
+      if (confirm(`'${item.querySelector('.tpl-title').value}' 답변을 삭제할까요? (저장을 눌러야 반영됩니다)`)) item.remove();
+    }
     else if (a === 'disconnect') {
       if (!confirm('Gmail 연결을 해제할까요? 팀 전체가 메일을 볼 수 없게 됩니다.')) return;
       await api('/api/google', { method: 'POST', body: { action: 'disconnect' } }).catch((err) => toast(err.message, 'error'));
@@ -839,6 +934,7 @@
       history.replaceState(null, '', location.pathname);
     }
     renderShell();
+    loadSettings();
     try {
       await loadTickets();
       if (S.view === 'inbox') renderList();
