@@ -1,77 +1,60 @@
-# CS Dashboard - Dr.Reju-All
+# Reju-All CS Desk
 
-Gmail + GitHub 통합 CS 대시보드
+Dr.Reju-All 글로벌 Shopify 스토어의 고객 문의(Gmail)를 팀이 함께 처리하는 대시보드.
 
-## 기능
+- **인박스**: CS 메일함 스레드를 가져와 Claude가 유형·우선순위·한 줄 요약을 자동으로 붙임. 처리 상태(미처리/진행중/답변완료/종결)와 담당자, 내부 메모, 처리 이력을 팀이 공유
+- **Shopify 주문 조회**: 문의한 고객 이메일과 본문의 주문번호(#1234)로 주문·결제·배송·송장·환불 내역을 옆에 표시
+- **AI 답장 초안**: 대화 내용 + 주문 정보 + 설정의 CS 가이드를 바탕으로 고객 언어로 초안 작성(한국어 번역·확인할 점 포함). Gmail 임시보관함 저장 또는 바로 발송
+- **통계**: 일별 접수량, 유형별 비중, 첫 응답 시간(중앙값/평균), 24시간 내 응답률, 담당자별 처리량
 
-- 📧 **Gmail 자동 연동**: global_md@drrejuall.com의 CS 메일 자동 수집
-- 📊 **유형별 분류**: 배송, 인증, 제휴, 환불, 기타
-- 🏷️ **라벨별 분류**: 긴급, 신규, Follow-up
-- 🔍 **검색 및 필터**: 고객명, 주제로 검색
-- 🔗 **GitHub 통합**: 준비 중 (Issues/PRs 추가 예정)
+## 구조
 
-## 설정
+```
+api/            Vercel 서버리스 함수 (9개)
+  auth.js         팀 로그인(공용 비밀번호) / 세션 정보
+  google.js       Gmail OAuth 연결 (팀 공용 1회)
+  threads.js      티켓 목록 / Gmail 동기화 + 자동 분류
+  thread.js       스레드 본문 / 상태·담당자·메모 변경
+  shopify.js      주문 조회
+  ai.js           답장 초안
+  send.js         답장 발송 / 임시보관함 저장
+  stats.js        통계
+  settings.js     검색식·별칭·CS 가이드·서명
+lib/            공통 로직 (Gmail REST, Shopify GraphQL, Claude, Blob 저장소)
+public/         화면 (빌드 없는 HTML/CSS/JS)
+dev/server.mjs  로컬 개발 서버
+```
 
-### 1. Google OAuth 설정
+저장소는 Vercel Blob(private) `shopify-cs-store`:
+`cs/tickets.json`(티켓 상태), `cs/settings.json`, `cs/google.json`(refresh token, AES-GCM 암호화).
 
-**Google API Console에서:**
-- Gmail API 활성화
-- OAuth 2.0 인증정보 생성
-- Redirect URI 추가: `https://reju-cs-dashboard.vercel.app/api/cs-gmail?action=callback`
+## 환경변수 (Vercel)
 
-### 2. Vercel 배포
+| 이름 | 설명 |
+|---|---|
+| `DASH_PASSWORD` | 팀 공용 로그인 비밀번호 |
+| `DASH_SECRET` | 세션 서명·토큰 암호화 키 (바꾸면 Gmail 재연결 필요) |
+| `TEAM_MEMBERS` | (선택) `Josh,Sophie,...` — 설정하면 로그인 시 이름을 목록에서 고름 |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth 클라이언트 |
+| `GOOGLE_REDIRECT_URI` | (선택) 기본값 `https://<도메인>/oauth/google/callback` |
+| `ANTHROPIC_API_KEY` | Claude 분류·초안. 없으면 키워드 분류 + 기본 템플릿 |
+| `CLAUDE_MODEL` | (선택) 기본 `claude-opus-5-5` |
+| `SHOPIFY_STORE_DOMAIN` | `xxx.myshopify.com` |
+| `SHOPIFY_ADMIN_TOKEN` | Admin API 토큰(`shpat_...`, 권한 `read_orders`, `read_customers`) |
+| `SHOPIFY_CLIENT_ID` / `SHOPIFY_CLIENT_SECRET` | 토큰 대신 Dev Dashboard 앱의 client credentials 사용 시 |
+| `BLOB_READ_WRITE_TOKEN` | Blob 스토어 연결 시 자동 설정 |
+
+### Google OAuth 설정
+
+Google Cloud Console → API 및 서비스 → 사용자 인증 정보 → OAuth 클라이언트에
+승인된 리디렉션 URI `https://shopify-cs-dashboard.vercel.app/oauth/google/callback` 추가.
+Gmail API 사용 설정, 범위는 `gmail.modify`(읽기·라벨·초안·발송).
+대시보드 로그인 후 **Gmail 연결**을 CS 메일 계정(global_md@drrejuall.com)으로 한 번만 하면 팀 전체가 사용.
+
+## 로컬 실행
 
 ```bash
-# 레포지토리 클론
-git clone https://github.com/[YOUR_USERNAME]/reju-cs-dashboard
-cd reju-cs-dashboard
-
-# Vercel 배포
-vercel --prod
+npm install
+npm run demo   # 가짜 데이터로 화면 확인 (비밀번호: demo) → http://localhost:3200
+npm run dev    # .env.local 사용
 ```
-
-### 3. 환경 변수 설정
-
-Vercel 프로젝트에 다음 환경변수 추가:
-
-```
-GOOGLE_CLIENT_ID=your-client-id-here
-GOOGLE_CLIENT_SECRET=your-client-secret-here
-REDIRECT_URI=https://your-vercel-url.vercel.app/api/cs-gmail?action=callback
-```
-
-## 사용 방법
-
-1. 대시보드 접속
-2. "Gmail 연동" 버튼 클릭
-3. Google 계정 로그인
-4. 권한 허용
-5. 자동으로 CS 메일 로드
-
-## 프로젝트 구조
-
-```
-reju-cs-dashboard/
-├── api/
-│   └── cs-gmail.js          # Gmail OAuth + API 함수
-├── public/
-│   └── index.html           # Canvas 대시보드 UI
-├── package.json
-├── vercel.json
-├── .env.example
-├── .gitignore
-└── README.md
-```
-
-## API 엔드포인트
-
-- `GET /api/cs-gmail?action=auth` - OAuth URL 반환
-- `GET /api/cs-gmail?action=callback&code=...` - 토큰 교환
-- `GET /api/cs-gmail?action=emails&token=...` - 메일 조회
-
-## 다음 단계
-
-- [ ] GitHub Issues/PRs 통합
-- [ ] Firestore 데이터 저장
-- [ ] 월별/주별 통계
-- [ ] 자동 응답 템플릿

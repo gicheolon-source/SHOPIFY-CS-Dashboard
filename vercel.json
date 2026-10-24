@@ -1,9 +1,19 @@
 {
-  "outputDirectory": "public",
+  "framework": null,
   "rewrites": [
+    { "source": "/oauth/google/callback", "destination": "/api/google?action=callback" }
+  ],
+  "functions": {
+    "api/**/*.js": { "maxDuration": 60 }
+  },
+  "headers": [
     {
-      "source": "/((?!api/).*)",
-      "destination": "/index.html"
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "same-origin" },
+        { "key": "X-Frame-Options", "value": "DENY" }
+      ]
     }
   ]
 }

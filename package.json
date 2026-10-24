@@ -1,11 +1,19 @@
 {
   "name": "reju-cs-dashboard",
   "version": "1.0.0",
-  "description": "Dr.Reju-All CS Dashboard",
-  "private": true,
+  "description": "Dr.Reju-All Shopify CS dashboard - Gmail + Shopify + Claude",
   "scripts": {
-    "dev": "vercel dev",
-    "build": "echo 'Static site'",
-    "start": "echo 'Use vercel dev'"
+    "dev": "node --env-file-if-exists=.env.local dev/server.mjs",
+    "build": "echo no build",
+    "demo": "node dev/server.mjs --demo"
+  },
+  "author": "Dr.Reju-All Team",
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.133.0",
+    "@vercel/blob": "^2.8.2"
+  },
+  "engines": {
+    "node": "24.x"
   }
 }
