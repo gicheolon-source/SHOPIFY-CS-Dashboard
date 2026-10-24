@@ -428,7 +428,7 @@
         <div class="card-b composer">
           <div class="ai-row">
             <input class="input" id="ai-instruction" placeholder="AI에게 요청 (선택) 예: 교환 가능하다고 안내, 송장번호 포함" value="${esc(c.instruction)}">
-            <button class="btn" data-action="draft" ${c.loading ? 'disabled' : ''}>${c.loading ? '<span class="spin"></span> 작성 중' : `${icon.spark} AI 초안`}</button>
+            <button class="btn" data-action="draft" ${c.loading ? 'disabled' : ''}>${c.loading ? `<span class="spin"></span> ${c.loading === 'fill' ? '빈칸 채우는 중' : '작성 중'}` : `${icon.spark} AI 초안`}</button>
           </div>
           ${templatePicker(t)}
           ${c.notes ? `<div class="notes"><b>확인할 것</b>\n${esc(c.notes)}</div>` : ''}
@@ -458,7 +458,7 @@
           ${recommended.length ? `<optgroup label="추천 · ${esc(t.type)}">${recommended.map(opt).join('')}</optgroup>` : ''}
           ${cats.map((cat) => `<optgroup label="${esc(cat)}">${list.filter((x) => x.cat === cat).map(opt).join('')}</optgroup>`).join('')}
         </select>
-        <span class="hint">[확인 필요: …] 부분은 보내기 전에 채워 주세요</span>
+        <span class="hint">빈칸은 AI가 메일·주문 내용으로 채워요 (확인 안 되는 건 남겨둠)</span>
       </div>`;
   }
 
@@ -478,14 +478,13 @@
     const text = fillTemplate(tpl.body, t);
     const box = $('#reply-box');
     const current = (box ? box.value : S.composer.text).trim();
-    if (current && !confirm('작성 중인 답장을 이 템플릿으로 바꿀까요?\n(취소하면 아래에 이어 붙입니다)')) {
-      S.composer.text = `${current}\n\n${text}`;
-    } else {
-      S.composer.text = text;
-    }
+    const replace = !current || confirm('작성 중인 답장을 이 템플릿으로 바꿀까요?\n(취소하면 아래에 이어 붙입니다)');
+    S.composer.text = replace ? text : `${current}\n\n${text}`;
     Object.assign(S.composer, { ko: '', notes: '' });
     renderDetail();
-    $('#reply-box')?.focus();
+    // 빈칸이 있으면 메일·Shopify 주문 내용으로 AI가 자동으로 채운다
+    if (replace && S.me.ai.enabled && /\[(확인 필요|주문번호|송장번호|새 주소|본문)/.test(text)) generateDraft(text);
+    else $('#reply-box')?.focus();
   }
 
   async function loadSettings() {
@@ -544,13 +543,21 @@
     if (S.selected === id) renderDetail();
   }
 
-  async function generateDraft() {
+  // template이 있으면 그 답변 양식의 빈칸을 메일·주문 내용으로 채운다
+  async function generateDraft(template) {
     const id = S.selected;
-    S.composer.loading = true;
+    S.composer.loading = template ? 'fill' : true;
     renderDetail();
     try {
-      const d = await api('/api/ai', { method: 'POST', body: { action: 'draft', id, instruction: S.composer.instruction } });
+      const d = await api('/api/ai', { method: 'POST', body: { action: 'draft', id, instruction: S.composer.instruction, ...(template ? { template } : {}) } });
       if (S.selected !== id) return;
+      // 채우는 동안 담당자가 직접 고쳤으면 덮어쓰지 않는다
+      if (template && ($('#reply-box')?.value ?? S.composer.text) !== template) {
+        S.composer.notes = `AI 빈칸 채우기 결과는 직접 수정하셔서 반영하지 않았습니다.\n\n${d.reply}`;
+        S.composer.loading = false;
+        renderDetail();
+        return;
+      }
       Object.assign(S.composer, { text: d.reply, ko: d.ko, notes: d.notes });
     } catch (err) {
       toast(err.message, 'error');
