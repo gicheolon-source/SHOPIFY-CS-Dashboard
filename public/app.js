@@ -296,6 +296,7 @@
           ${t.type ? `<span class="chip ${TYPE_CHIP[t.type] || ''}">${esc(t.type)}</span>` : ''}
           ${OPEN.has(t.status) && t.lastFromCustomer && t.type !== '스팸/광고' ? `<span class="chip danger">답장 필요 · ${ago(t.lastCustomerAt)}</span>` : ''}
           ${t.followup && OPEN.has(t.status) ? '<span class="chip warn" title="고객 대기 중 회신이 없어 다시 열림">팔로업 필요</span>' : ''}
+          ${OPEN.has(t.status) && t.lastFromCustomer && draftFresh(t) ? '<span class="chip ok" title="열면 미리 만든 AI 초안이 답장 칸에 들어가 있어요">AI 초안 준비</span>' : ''}
           ${t.amazonOrder ? `<span class="chip accent" title="아마존 주문번호 ${esc(t.amazonOrder)}">아마존 주문</span>` : ''}
           ${t.form ? '<span class="chip" title="홈페이지 문의 폼으로 들어온 문의">문의 폼</span>' : ''}
           ${t.assignee ? `<span class="avatar sm" title="담당 ${esc(t.assignee)}">${initial(t.assignee)}</span>` : ''}
@@ -365,6 +366,46 @@
     }
     S.orders = orders.status === 'fulfilled' ? orders.value : { error: orders.reason.message };
     renderList();
+    renderDetail();
+    const t = S.tickets.find((x) => x.id === id);
+    if (t) applyDraft(t);
+  }
+
+  // ---------- AI 초안 미리 만들기 ----------
+  // 답장이 필요한 새 문의는 화면이 열려 있는 동안 백그라운드로 초안을 만들어 티켓에 저장한다 (팀 전체 공유)
+  const draftFresh = (t) => t.draft && t.draft.for >= t.lastCustomerAt;
+  let prefilling = false;
+  async function prefillDrafts() {
+    if (prefilling || !S.me?.ai?.enabled || S.settings?.autoDraft === false) return;
+    prefilling = true;
+    try {
+      const todo = S.tickets
+        .filter((t) => OPEN.has(t.status) && t.lastFromCustomer && t.type && t.type !== '스팸/광고' && !t.autoClosed && !draftFresh(t)
+          && !(t.draftPendingAt && Date.now() - t.draftPendingAt < 3 * 60_000))
+        .sort((a, b) => b.lastCustomerAt - a.lastCustomerAt)
+        .slice(0, 15);
+      const worker = async () => {
+        for (let t = todo.shift(); t; t = todo.shift()) {
+          try {
+            const r = await api('/api/ai', { method: 'POST', body: { action: 'prefill', id: t.id } });
+            if (!r.ticket) continue;
+            mergeTicket(r.ticket);
+            if (S.view === 'inbox') renderList();
+            applyDraft(r.ticket);
+          } catch {}
+        }
+      };
+      await Promise.all([worker(), worker()]);
+    } finally {
+      prefilling = false;
+    }
+  }
+
+  // 열려 있는 문의의 답장 칸이 비어 있으면 미리 만든 초안을 넣는다
+  function applyDraft(t) {
+    if (S.selected !== t.id || !draftFresh(t) || !t.lastFromCustomer || !S.detail || S.detail.error) return;
+    if (S.composer.text || S.composer.loading) return;
+    Object.assign(S.composer, { text: t.draft.reply, ko: t.draft.ko, notes: t.draft.notes, prefilled: t.draft.at });
     renderDetail();
   }
 
@@ -520,6 +561,7 @@
             <button class="btn" data-action="draft" ${c.loading ? 'disabled' : ''}>${c.loading ? `<span class="spin"></span> ${c.loading === 'fill' ? '빈칸 채우는 중' : '작성 중'}` : `${icon.spark} AI 초안`}</button>
           </div>
           ${templatePicker(t)}
+          ${c.prefilled ? `<div class="prefilled">${icon.spark} 새 문의가 들어올 때 미리 만들어 둔 AI 초안이에요 (${ago(c.prefilled)}). 확인하고 고친 뒤 보내세요.</div>` : ''}
           ${c.action || c.forward ? `<div class="todo"><b>처리할 일</b> (고객에게 보내지 않음)\n${esc(c.action || '')}${c.forward ? `<div class="todo-act"><button class="btn sm" data-action="forward" data-to="${esc(c.forward)}">${icon.mail}${esc(c.forward)}로 메일 전달 (첨부 포함)</button></div>` : ''}</div>` : ''}
           ${c.notes ? `<div class="notes"><b>확인할 것</b>\n${esc(c.notes)}</div>` : ''}
           <textarea class="textarea reply-box" id="reply-box" placeholder="답장을 입력하거나 AI 초안을 생성하세요">${esc(c.text)}</textarea>
@@ -580,7 +622,7 @@
     const current = (box ? box.value : S.composer.text).trim();
     const replace = !current || confirm('작성 중인 답장을 이 템플릿으로 바꿀까요?\n(취소하면 아래에 이어 붙입니다)');
     S.composer.text = replace ? text : `${current}\n\n${text}`;
-    Object.assign(S.composer, { ko: '', notes: '', action: tpl.action || '', forward: tpl.forward || '', after: tpl.after || '' });
+    Object.assign(S.composer, { ko: '', notes: '', action: tpl.action || '', forward: tpl.forward || '', after: tpl.after || '', prefilled: 0 });
     renderDetail();
     // [국가명]·[트래킹넘버] 같은 한글 빈칸이 있으면 메일·Shopify 주문 내용으로 AI가 자동으로 채운다
     if (replace && S.me.ai.enabled && /\[[^\]\n]*[가-힣][^\]\n]*\]/.test(text)) generateDraft(text);
@@ -619,9 +661,116 @@
             </div>
             <div class="items">${x.items.map((i) => `${esc(i.title)} ×${esc(i.quantity)}`).join('<br>')}</div>
             ${x.tracking.map((tr) => `<div>${esc(tr.company || '')} ${tr.url ? `<a href="${esc(tr.url)}" target="_blank" rel="noopener">${esc(tr.number)}</a>` : esc(tr.number || '')} <span class="hint">${esc(tr.status || '')}</span></div>`).join('')}
+            ${x.id && x.id.startsWith('gid://') ? `
+            <div class="order-acts">
+              ${!x.cancelled ? `<button class="btn xs" data-action="order-act" data-kind="cancel" data-idx="${idx(x)}">취소</button>` : ''}
+              ${!x.cancelled ? `<button class="btn xs" data-action="order-act" data-kind="address" data-idx="${idx(x)}">주소 변경</button>` : ''}
+              ${x.refundable ? `<button class="btn xs" data-action="order-act" data-kind="refund" data-idx="${idx(x)}">환불</button>` : ''}
+              <button class="btn xs ghost" data-action="order-act" data-kind="note" data-idx="${idx(x)}">메모</button>
+            </div>` : ''}
           </div>`).join('')}`;
     }
     return `<div class="card"><div class="card-h">Shopify 주문</div><div class="card-b">${body}</div></div>`;
+  }
+
+  const idx = (x) => S.orders.orders.indexOf(x);
+
+  // ---------- Shopify 주문 처리 (취소·주소 변경·환불·메모) ----------
+  // 실제 주문을 바꾸므로: 입력 → 요약 확인 → 실행 → 처리 이력·Shopify 메모에 기록
+  const CANCEL_REASONS = [['CUSTOMER', '고객 요청'], ['FRAUD', '사기 의심'], ['DECLINED', '결제 거절'], ['INVENTORY', '재고 없음'], ['STAFF', '직원 실수'], ['OTHER', '기타']];
+
+  function openOrderAction(kind, i) {
+    const x = S.orders?.orders?.[i];
+    if (!x) return;
+    const a = x.address || {};
+    const field = (name, label, value = '', attrs = '') => `<label class="field">${label}<input class="input" name="${name}" value="${esc(value || '')}" ${attrs}></label>`;
+    const forms = {
+      cancel: {
+        title: `주문 ${x.name} 취소`,
+        body: `
+          ${x.fulfillment !== 'unfulfilled' ? `<div class="warn-box">이미 출고(${esc(x.fulfillment)})된 주문이에요. Shopify에서 취소가 거부될 수 있어요.</div>` : ''}
+          <label class="field">취소 사유<select class="select" name="reason">${CANCEL_REASONS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
+          <label class="check"><input type="checkbox" name="refund" checked> 원결제 수단으로 전액 환불</label>
+          <label class="check"><input type="checkbox" name="restock" checked> 재고 복원</label>
+          <label class="check"><input type="checkbox" name="notify"> Shopify 취소 안내 메일을 고객에게 보내기</label>
+          ${field('note', '내부 메모 (선택, Shopify 주문에 남음)')}
+          <label class="check must"><input type="checkbox" name="mcf" required> 아마존 MCF 출고 취소를 먼저 확인했어요</label>`,
+        summary: (f) => `${x.name} (${x.total})을 취소합니다.\n· 사유: ${CANCEL_REASONS.find(([v]) => v === f.get('reason'))[1]}\n· 환불: ${f.get('refund') ? '원결제 수단 전액' : '안 함'}\n· 재고 복원: ${f.get('restock') ? '예' : '아니오'}\n· 고객 메일: ${f.get('notify') ? '보냄' : '안 보냄'}`,
+        payload: (f) => ({ reason: f.get('reason'), refund: !!f.get('refund'), restock: !!f.get('restock'), notify: !!f.get('notify'), note: f.get('note') }),
+      },
+      address: {
+        title: `주문 ${x.name} 배송지 변경`,
+        body: `
+          <div class="warn-box">Shopify 주문의 배송지만 바뀌어요. 아마존 MCF로 이미 넘어간 주문은 실제 배송지가 바뀌지 않으니 출고 전인지 먼저 확인하세요.</div>
+          <div class="grid2">${field('firstName', '이름 (First)', a.firstName)}${field('lastName', '성 (Last)', a.lastName)}</div>
+          ${field('address1', '주소 1', a.address1, 'required')}
+          ${field('address2', '주소 2 (동·호수)', a.address2)}
+          <div class="grid2">${field('city', '도시', a.city, 'required')}${field('provinceCode', '주 코드 (예: TX)', a.provinceCode)}</div>
+          <div class="grid2">${field('zip', '우편번호', a.zip)}${field('countryCode', '국가 코드 (예: US)', a.countryCodeV2, 'required maxlength="2"')}</div>
+          ${field('phone', '전화번호 (+1…)', a.phone)}`,
+        summary: (f) => `${x.name}의 배송지를 아래로 바꿉니다.\n${[f.get('firstName'), f.get('lastName')].filter(Boolean).join(' ')}\n${f.get('address1')} ${f.get('address2') || ''}\n${f.get('city')}, ${f.get('provinceCode') || ''} ${f.get('zip') || ''} ${f.get('countryCode')}`,
+        payload: (f) => ({ address: Object.fromEntries(['firstName', 'lastName', 'address1', 'address2', 'city', 'provinceCode', 'zip', 'countryCode', 'phone'].map((k) => [k, k === 'countryCode' ? String(f.get(k) || '').toUpperCase() : f.get(k)])) }),
+      },
+      refund: {
+        title: `주문 ${x.name} 환불`,
+        body: `
+          <div class="hint">결제 ${esc(x.total)}${x.refunded ? ` · 이미 환불 ${esc(x.refunded)}` : ''} · 원결제 수단으로 환불, 재고는 건드리지 않아요</div>
+          <label class="check"><input type="radio" name="mode" value="full" checked> 남은 금액 전액 (상품 + 배송비)</label>
+          <label class="check"><input type="radio" name="mode" value="amount"> 금액 지정 <input class="input" name="amount" type="number" min="0.01" step="0.01" placeholder="0.00" style="width:110px;margin-left:6px"> ${esc(x.currency || '')}</label>
+          ${field('note', '환불 사유 (Shopify 환불 메모)')}
+          <label class="check"><input type="checkbox" name="notify"> Shopify 환불 안내 메일을 고객에게 보내기</label>`,
+        summary: (f) => `${x.name} 환불: ${f.get('mode') === 'full' ? '남은 금액 전액 (상품 + 배송비)' : `${f.get('amount')} ${x.currency || ''}`}\n· 고객 메일: ${f.get('notify') ? '보냄' : '안 보냄'}\n\n되돌릴 수 없어요.`,
+        payload: (f) => ({ full: f.get('mode') === 'full', amount: f.get('amount'), note: f.get('note'), notify: !!f.get('notify') }),
+      },
+      note: {
+        title: `주문 ${x.name} 메모 남기기`,
+        body: `<label class="field">Shopify 주문 메모에 덧붙일 내용<textarea class="textarea" name="note" required style="min-height:80px" placeholder="예: 누락 제품 MCF 재발송 요청함"></textarea></label><div class="hint">앞에 [CS 이름 · 시간]이 자동으로 붙어요.</div>`,
+        summary: null,
+        payload: (f) => ({ note: f.get('note') }),
+      },
+    };
+    const spec = forms[kind];
+    const key = crypto.randomUUID ? crypto.randomUUID() : String(Date.now()); // 환불 중복 실행 방지 키
+    let dlg = document.getElementById('order-dialog');
+    if (!dlg) {
+      dlg = document.createElement('dialog');
+      dlg.id = 'order-dialog';
+      document.body.appendChild(dlg);
+    }
+    dlg.innerHTML = `
+      <form method="dialog" class="dlg">
+        <h3>${esc(spec.title)}</h3>
+        <div class="dlg-body">${spec.body}</div>
+        <div class="error-text" id="dlg-error"></div>
+        <div class="dlg-actions">
+          <button class="btn" value="cancel" formnovalidate>닫기</button>
+          <button class="btn primary ${kind === 'note' ? '' : 'danger-btn'}" value="ok">${kind === 'note' ? '메모 저장' : '실행'}</button>
+        </div>
+      </form>`;
+    const form = dlg.querySelector('form');
+    form.addEventListener('submit', async (e) => {
+      if (e.submitter?.value !== 'ok') return;
+      e.preventDefault();
+      const f = new FormData(form);
+      if (spec.summary && !confirm(`${spec.summary(f)}\n\n진행할까요?`)) return;
+      const btn = e.submitter;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin"></span> 처리 중';
+      try {
+        const r = await api('/api/shopify', { method: 'POST', body: { action: kind, orderId: x.id, orderName: x.name, ticketId: S.selected, key, ...spec.payload(f) } });
+        if (r.ticket) mergeTicket(r.ticket);
+        dlg.close();
+        toast(kind === 'note' ? 'Shopify 주문에 메모를 남겼습니다' : `${spec.title} 완료${r.amount && r.amount !== 'full' ? ` (${r.amount})` : ''}`);
+        const id = S.selected;
+        S.orders = await api(`/api/shopify?id=${encodeURIComponent(id)}`).catch((err) => ({ error: err.message }));
+        if (S.selected === id) renderDetail();
+      } catch (err) {
+        document.getElementById('dlg-error').textContent = err.message;
+        btn.disabled = false;
+        btn.textContent = kind === 'note' ? '메모 저장' : '실행';
+      }
+    });
+    dlg.showModal();
   }
 
   async function updateTicket(patch, okMsg) {
@@ -658,7 +807,7 @@
         renderDetail();
         return;
       }
-      Object.assign(S.composer, { text: d.reply, ko: d.ko, notes: d.notes });
+      Object.assign(S.composer, { text: d.reply, ko: d.ko, notes: d.notes, prefilled: 0 });
     } catch (err) {
       toast(err.message, 'error');
     }
@@ -745,6 +894,7 @@
       S.tickets = visible(d.tickets);
       S.syncedAt = d.syncedAt;
       if (!quiet) toast(d.classified ? `동기화 완료 · 새 문의 ${d.classified}건 분류` : '동기화 완료');
+      setTimeout(prefillDrafts, 0);
     } catch (err) {
       if (err.code === 'GOOGLE_RECONNECT') { S.me.google.connected = false; renderShell(); }
       toast(err.message, 'error');
@@ -897,6 +1047,15 @@
           </div>
         </div>
         <div class="card">
+          <div class="card-h">제품별 문제 문의 <span class="right hint">${esc((s.problemTypes || []).join(' · '))} 유형 · AI가 찾은 제품 또는 주문 상품 기준</span></div>
+          <table class="tbl">
+            <thead><tr><th>제품</th><th class="num">합계</th>${(s.problemTypes || []).map((p) => `<th class="num">${esc(p)}</th>`).join('')}</tr></thead>
+            <tbody>
+              ${(s.byProduct || []).map((r) => `<tr><td>${esc(r.product)}</td><td class="num"><b>${r.total}</b></td>${(s.problemTypes || []).map((p) => `<td class="num">${r.byType[p] || ''}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${2 + (s.problemTypes || []).length}" class="hint">아직 제품이 확인된 문제 문의가 없습니다 (새로 들어오는 문의부터 집계돼요)</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
           <div class="card-h">담당자별</div>
           <table class="tbl">
             <thead><tr><th>담당자</th><th class="num">배정</th><th class="num">처리 중</th><th class="num">완료</th></tr></thead>
@@ -1027,6 +1186,7 @@
                 <textarea class="textarea" id="s-guide" style="min-height:260px">${esc(st.guide)}</textarea>
                 <span class="hint">환불 기준, 배송 기간, 자주 묻는 답변 등을 적어두면 AI 초안이 그대로 따릅니다.</span>
               </label>
+              <label class="check"><input type="checkbox" id="s-autodraft" ${st.autoDraft !== false ? 'checked' : ''}> 새 문의가 들어오면 AI 초안을 미리 만들어 두기 <span class="hint">(문의 1건당 AI 호출 1번 · 답장 필요한 문의만)</span></label>
               <label class="field">서명
                 <textarea class="textarea" id="s-signature" style="min-height:70px">${esc(st.signature)}</textarea>
               </label>
@@ -1093,6 +1253,7 @@
           followupDays: Number($('#s-followup').value) || 3,
           guide: $('#s-guide').value,
           signature: $('#s-signature').value,
+          autoDraft: $('#s-autodraft').checked,
           templates: collectTemplates(),
         },
       });
@@ -1149,6 +1310,7 @@
     } else if (a === 'draft') generateDraft();
     else if (a === 'send') sendReply(el.dataset.mode);
     else if (a === 'forward') forwardMail(el.dataset.to);
+    else if (a === 'order-act') openOrderAction(el.dataset.kind, Number(el.dataset.idx));
     else if (a === 'days') {
       S.days = Number(el.dataset.days);
       renderStats();
@@ -1212,6 +1374,7 @@
     loadSettings();
     try {
       await loadTickets();
+      setTimeout(prefillDrafts, 0);
       if (S.view === 'inbox') renderList();
     } catch (err) {
       toast(err.message, 'error');

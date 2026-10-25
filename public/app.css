@@ -113,6 +113,22 @@ a { color: var(--accent); }
 .btn.ghost:hover { background: var(--surface-3); }
 .btn.danger { color: var(--danger); }
 .btn.sm { height: 28px; padding: 0 10px; font-size: 12px; }
+.btn.xs { height: 24px; padding: 0 8px; font-size: 11.5px; border-radius: 7px; }
+.btn.danger-btn { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+/* ---------- 주문 처리 대화상자 ---------- */
+.order-acts { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 6px; }
+#order-dialog { border: 1px solid var(--border); border-radius: 14px; padding: 0; width: min(460px, calc(100% - 32px)); background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+#order-dialog::backdrop { background: rgba(0, 0, 0, .35); }
+.dlg { display: grid; gap: 12px; padding: 18px; }
+.dlg h3 { margin: 0; font-size: 16px; }
+.dlg-body { display: grid; gap: 10px; }
+.dlg-body .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.dlg-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.check.must { font-weight: 600; }
+.warn-box { background: var(--warn-soft); color: var(--warn); border-radius: 10px; padding: 9px 11px; font-size: 12.5px; }
+.prefilled { display: flex; gap: 6px; align-items: center; font-size: 12.5px; color: var(--accent); background: var(--accent-soft); border-radius: 10px; padding: 8px 11px; }
 .input, .select, .textarea {
   width: 100%; border: 1px solid var(--border-strong); background: var(--surface);
   border-radius: 9px; padding: 7px 10px; outline: none;
