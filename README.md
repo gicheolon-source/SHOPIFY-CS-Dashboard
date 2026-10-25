@@ -35,6 +35,10 @@ dev/server.mjs  로컬 개발 서버
 | `DASH_USER` | 팀 공용 로그인 아이디 |
 | `DASH_PASSWORD` | 팀 공용 로그인 비밀번호 (아이디·비밀번호를 바꾸면 기존 로그인이 모두 풀림) |
 | `DASH_SECRET` | 세션 서명·토큰 암호화 키 (바꾸면 Gmail 재연결 필요) |
+| `SLACK_WEBHOOK_URL` | (선택) 슬랙 Incoming Webhook — 긴급·24시간 미답변·배정 알림, 매일 아침 요약 |
+| `CRON_SECRET` | 매일 09:00 KST Vercel Cron(`/api/stats?digest=1`: 자동 동기화 + 슬랙 요약) 인증 |
+| `APP_URL` | (선택) 슬랙 링크용 대시보드 주소. 없으면 Vercel 프로덕션 주소 |
+| `SHOPIFY_ORDER_PREFIX` | (선택) 주문번호 접두사, 기본 `DR` (DR#15409) |
 | `TEAM_MEMBERS` | (선택) `Josh,Sophie,...` — 설정하면 로그인 시 이름을 목록에서 고름 |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth 클라이언트 |
 | `GOOGLE_REDIRECT_URI` | (선택) 기본값 `https://<도메인>/oauth/google/callback` |

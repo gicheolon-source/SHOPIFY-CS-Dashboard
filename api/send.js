@@ -3,7 +3,7 @@ const gmail = require('../lib/gmail');
 const tickets = require('../lib/tickets');
 const { connection } = require('../lib/google');
 
-const AFTER = ['진행중', '답변완료', '종결'];
+const AFTER = ['진행중', '고객 대기', '답변완료', '종결'];
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // mode: 'send' 답장 발송 · 'draft' Gmail 임시보관함 저장 · 'forward' 고객 메일을 다른 팀 주소로 전달(첨부 포함)

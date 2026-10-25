@@ -6,6 +6,9 @@
   "functions": {
     "api/**/*.js": { "maxDuration": 60 }
   },
+  "crons": [
+    { "path": "/api/stats?digest=1", "schedule": "0 0 * * *" }
+  ],
   "headers": [
     {
       "source": "/(.*)",

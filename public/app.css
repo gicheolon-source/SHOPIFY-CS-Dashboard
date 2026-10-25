@@ -200,6 +200,17 @@ label.field { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color:
 .item .sum { font-size: 12.5px; color: var(--text-2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .item .tags { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
 .item .tags .avatar { margin-left: auto; }
+.item .pick { margin: 0; width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; flex: none; opacity: .45; }
+.item:hover .pick, .item .pick:checked { opacity: 1; }
+.item.picked { background: var(--accent-soft); }
+.bulk-bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 12px; background: var(--accent-soft); border-bottom: 1px solid var(--border); font-size: 12.5px; }
+.bulk-bar[hidden] { display: none; }
+.bulk-bar .select { height: 30px; font-size: 12.5px; }
+.cust-hist { display: grid; gap: 4px; }
+.ch-row { display: grid; grid-template-columns: auto 1fr; gap: 2px 6px; align-items: center; text-align: left; background: none; border: 0; border-radius: 8px; padding: 6px; cursor: pointer; color: inherit; font: inherit; }
+.ch-row:hover { background: var(--surface-2); }
+.ch-row .ch-subj { font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch-row .hint { grid-column: 2; font-size: 11.5px; }
 .empty { padding: 48px 20px; text-align: center; color: var(--text-3); }
 
 .detail-pane { min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
@@ -234,7 +245,10 @@ label.field { display: grid; gap: 6px; font-size: 13px; font-weight: 600; color:
 .msg.collapsed .msg-h .preview { display: block; }
 .msg-h .preview { display: none; color: var(--text-3); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
 .quoted { margin-top: 10px; padding-left: 10px; border-left: 3px solid var(--border-strong); color: var(--text-3); }
-.attach { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.attach { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; align-items: flex-start; }
+.attach a.chip { text-decoration: none; }
+.attach .thumb { display: block; width: 120px; height: 90px; border-radius: 8px; overflow: hidden; border: 1px solid var(--border); background: var(--surface-2); }
+.attach .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
 .composer { display: grid; gap: 10px; }
 .composer .ai-row { display: flex; gap: 8px; }

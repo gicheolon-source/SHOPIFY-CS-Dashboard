@@ -2,11 +2,11 @@
 (() => {
   'use strict';
 
-  const STATUSES = ['미처리', '진행중', '답변완료', '종결'];
+  const STATUSES = ['미처리', '진행중', '고객 대기', '답변완료', '종결'];
   const TYPES = ['배송', '교환/환불', '제품 문의', '주문/결제', '피부 트러블', '정품 인증', '제휴/인플루언서', 'B2B/도매', '스팸/광고', '기타'];
   const PRIORITIES = ['긴급', '보통', '낮음'];
   const OPEN = new Set(['미처리', '진행중']);
-  const STATUS_CHIP = { 미처리: 'danger', 진행중: 'warn', 답변완료: 'ok', 종결: '' };
+  const STATUS_CHIP = { 미처리: 'danger', 진행중: 'warn', '고객 대기': 'info', 답변완료: 'ok', 종결: '' };
   const TYPE_CHIP = { 배송: 'info', '교환/환불': 'warn', '피부 트러블': 'danger', '정품 인증': 'warn', '제휴/인플루언서': 'accent', 'B2B/도매': 'accent' };
 
   const S = {
@@ -22,6 +22,7 @@
     orders: null,
     composer: { text: '', ko: '', notes: '', instruction: '', loading: false, sending: false },
     expanded: new Set(),
+    bulk: new Set(), // 목록에서 체크한 티켓 (일괄 처리)
     stats: null,
     days: 30,
     settings: null,
@@ -245,6 +246,7 @@
               </select>
             </div>
           </div>
+          <div class="bulk-bar" id="bulk-bar" hidden></div>
           <div class="list" id="list"></div>
         </section>
         <section class="detail-pane" id="detail"></section>
@@ -279,8 +281,9 @@
       return;
     }
     $('#list').innerHTML = list.map((t) => `
-      <article class="item ${t.id === S.selected ? 'selected' : ''} ${t.unread || t.groupUnread ? 'unread' : ''}" data-action="open" data-id="${esc(t.id)}">
+      <article class="item ${t.id === S.selected ? 'selected' : ''} ${t.unread || t.groupUnread ? 'unread' : ''} ${S.bulk.has(t.id) ? 'picked' : ''}" data-action="open" data-id="${esc(t.id)}">
         <div class="top">
+          <input type="checkbox" class="pick" data-action="pick" data-id="${esc(t.id)}" title="여러 건 선택" ${S.bulk.has(t.id) ? 'checked' : ''}>
           <span class="dot ${esc(t.priority || '')}" title="우선순위 ${esc(t.priority || '-')}"></span>
           <span class="who">${esc(t.customer?.name || t.customer?.email)}</span>
           ${(t.groupMessages || t.messageCount) > 1 ? `<span class="hint" title="${t.related?.length ? `따로 온 메일 ${t.related.length + 1}건을 하나로 묶음` : ''}">${t.groupMessages || t.messageCount}</span>` : ''}
@@ -292,9 +295,47 @@
           <span class="chip ${STATUS_CHIP[t.status]}">${esc(t.status)}</span>
           ${t.type ? `<span class="chip ${TYPE_CHIP[t.type] || ''}">${esc(t.type)}</span>` : ''}
           ${OPEN.has(t.status) && t.lastFromCustomer && t.type !== '스팸/광고' ? `<span class="chip danger">답장 필요 · ${ago(t.lastCustomerAt)}</span>` : ''}
+          ${t.followup && OPEN.has(t.status) ? '<span class="chip warn" title="고객 대기 중 회신이 없어 다시 열림">팔로업 필요</span>' : ''}
+          ${t.amazonOrder ? `<span class="chip accent" title="아마존 주문번호 ${esc(t.amazonOrder)}">아마존 주문</span>` : ''}
+          ${t.form ? '<span class="chip" title="홈페이지 문의 폼으로 들어온 문의">문의 폼</span>' : ''}
           ${t.assignee ? `<span class="avatar sm" title="담당 ${esc(t.assignee)}">${initial(t.assignee)}</span>` : ''}
         </div>
       </article>`).join('');
+    renderBulkBar();
+  }
+
+  // ---------- 일괄 처리 ----------
+  function renderBulkBar() {
+    const bar = $('#bulk-bar');
+    if (!bar) return;
+    // 목록에서 사라진(동기화·필터) 티켓은 선택에서 뺀다
+    for (const id of S.bulk) if (!S.tickets.some((t) => t.id === id)) S.bulk.delete(id);
+    bar.hidden = !S.bulk.size;
+    if (!S.bulk.size) return;
+    bar.innerHTML = `
+      <b>${S.bulk.size}건 선택</b>
+      <select class="select" id="bulk-status"><option value="">상태 바꾸기…</option>${STATUSES.map((s) => `<option>${s}</option>`).join('')}</select>
+      <select class="select" id="bulk-assignee"><option value="">담당자 바꾸기…</option><option value="__none">담당자 없음</option>${assignees().map((a) => `<option value="${esc(a)}">${esc(a)}</option>`).join('')}</select>
+      <button class="btn sm ghost" data-action="bulk-all">목록 전체 선택</button>
+      <button class="btn sm ghost" data-action="bulk-clear">선택 해제</button>`;
+    $('#bulk-status').addEventListener('change', (e) => e.target.value && bulkApply({ status: e.target.value }));
+    $('#bulk-assignee').addEventListener('change', (e) => e.target.value && bulkApply({ assignee: e.target.value === '__none' ? null : e.target.value }));
+  }
+
+  async function bulkApply(patch) {
+    const ids = [...S.bulk];
+    const what = patch.status ? `상태를 '${patch.status}'(으)로` : `담당자를 '${patch.assignee || '없음'}'(으)로`;
+    if (!confirm(`선택한 ${ids.length}건의 ${what} 바꿀까요?`)) return renderBulkBar();
+    try {
+      const r = await api('/api/threads', { method: 'POST', body: { action: 'bulk', ids, patch } });
+      r.tickets.forEach(mergeTicket);
+      S.bulk.clear();
+      toast(`${r.tickets.length}건을 바꿨습니다`);
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+    renderList();
+    renderDetail();
   }
 
   async function openTicket(id) {
@@ -350,6 +391,8 @@
         </div>
         <div class="meta">
           <span><b>${esc(t.customer?.name)}</b> &lt;${esc(t.customer?.email)}&gt;</span>
+          ${t.form ? `<span class="chip" title="홈페이지 문의 폼">문의 폼${t.form.country ? ` · ${esc(t.form.country)}` : ''}${t.form.phone ? ` · ${esc(t.form.phone)}` : ''}</span>` : ''}
+          ${t.amazonOrder ? `<span class="chip accent" title="아마존에서 산 주문 — 고객 정보·주문 내역을 우리가 볼 수 없음">아마존 주문 ${esc(t.amazonOrder)}</span>` : ''}
           <span class="hint">· 첫 문의 ${esc(fullDate(t.firstAt))}</span>
           ${t.firstReplyAt ? `<span class="hint">· 첫 응답 ${hours((t.firstReplyAt - t.firstAt) / 3600000)} 만에</span>` : ''}
         </div>
@@ -378,6 +421,7 @@
         </div>
         <aside class="side">
           ${renderOrders()}
+          ${renderCustomerHistory(t)}
           <div class="card">
             <div class="card-h">내부 메모</div>
             <div class="card-b"><textarea class="textarea" id="note" placeholder="팀원에게 남길 메모 (고객에게는 보이지 않음)" style="min-height:70px">${esc(t.note || '')}</textarea></div>
@@ -408,6 +452,40 @@
     }
   }
 
+  // 같은 고객의 다른 문의 (반복 문의·이전 처리 내역 확인용)
+  function renderCustomerHistory(t) {
+    const email = t.customer?.email;
+    const others = S.tickets.filter((x) => x.id !== t.id && x.customer?.email === email).sort((a, b) => b.lastAt - a.lastAt);
+    const sent = (S.sent?.items || []).filter((m) => m.to.some((x) => x.email === email)).length;
+    return `
+      <div class="card">
+        <div class="card-h">이 고객의 다른 문의 <span class="right hint">${others.length}건${sent ? ` · 보낸 메일 ${sent}통` : ''}</span></div>
+        <div class="card-b cust-hist">
+          ${others.slice(0, 8).map((x) => `
+            <button class="ch-row" data-action="open" data-id="${esc(x.id)}">
+              <span class="chip ${STATUS_CHIP[x.status]}">${esc(x.status)}</span>
+              <span class="ch-subj">${esc(x.subject)}</span>
+              <span class="hint">${esc(fullDate(x.firstAt))}</span>
+            </button>`).join('') || '<span class="hint">처음 문의한 고객입니다</span>'}
+        </div>
+      </div>`;
+  }
+
+  // 첨부: 사진은 미리보기, 나머지는 내려받기 (Gmail 첨부 ID가 있을 때)
+  function renderAttachments(m) {
+    if (!m.attachments?.length) return '';
+    const url = (a) => `/api/thread?att=${encodeURIComponent(a.attachmentId)}&msg=${encodeURIComponent(m.id)}&mime=${encodeURIComponent(a.mime || '')}&name=${encodeURIComponent(a.name)}`;
+    const isImg = (a) => /^image\/(png|jpe?g|gif|webp)$/i.test(a.mime || '');
+    return `
+      <div class="attach">
+        ${m.attachments.map((a) => (!a.attachmentId
+          ? `<span class="chip">${icon.clip}${esc(a.name)}</span>`
+          : isImg(a)
+            ? `<a class="thumb" href="${url(a)}" target="_blank" rel="noopener" title="${esc(a.name)}"><img src="${url(a)}" alt="${esc(a.name)}" loading="lazy"></a>`
+            : `<a class="chip" href="${url(a)}" title="내려받기">${icon.clip}${esc(a.name)}</a>`)).join('')}
+      </div>`;
+  }
+
   function renderMessages() {
     if (!S.detail) return '<div class="skeleton"><span class="spin"></span> 메일 불러오는 중…</div>';
     if (S.detail.error) return `<div class="card card-b" style="color:var(--danger)">${esc(S.detail.error)}</div>`;
@@ -425,7 +503,7 @@
             <span class="preview">${esc(m.snippet)}</span>
             <span class="when">${esc(fullDate(m.at))}</span>
           </div>
-          <div class="msg-b">${linkify(m.text || m.snippet)}${m.quoted ? `<details class="quoted"><summary>이전 메일 인용 보기</summary>${linkify(m.quoted)}</details>` : ''}${m.attachments?.length ? `<div class="attach">${m.attachments.map((a) => `<span class="chip">${icon.clip}${esc(a.name)}</span>`).join('')}</div>` : ''}</div>
+          <div class="msg-b">${linkify(m.text || m.snippet)}${m.quoted ? `<details class="quoted"><summary>이전 메일 인용 보기</summary>${linkify(m.quoted)}</details>` : ''}${renderAttachments(m)}</div>
         </div>`;
     }).join('');
   }
@@ -452,7 +530,7 @@
             <span class="spacer"></span>
             <label class="hint after-sel">보낸 뒤
               <select class="select" id="after-status">
-                ${['진행중', '답변완료', '종결'].map((s) => `<option ${(c.after || '답변완료') === s ? 'selected' : ''}>${s}</option>`).join('')}
+                ${['진행중', '고객 대기', '답변완료', '종결'].map((s) => `<option ${(c.after || '답변완료') === s ? 'selected' : ''}>${s}</option>`).join('')}
               </select>
             </label>
             <button class="btn" data-action="send" data-mode="draft" ${c.sending ? 'disabled' : ''}>Gmail 임시보관함에 저장</button>
@@ -468,11 +546,15 @@
     if (!list.length) return '';
     const opt = (x) => `<option value="${esc(x.id)}">${esc(x.title)}</option>`;
     const recommended = list.filter((x) => (x.types || []).includes(t.type));
+    // 아마존 주문번호가 보이면 아마존 주문용 답변을 맨 위에 (본문 속 번호도 확인)
+    const amazon = t.amazonOrder || (S.detail?.thread?.messages || []).some((m) => /\b\d{3}-\d{7}-\d{7}\b/.test(m.text || ''));
+    const amazonTpls = amazon ? list.filter((x) => x.id.startsWith('m-amazon')) : [];
     const cats = [...new Set(list.map((x) => x.cat))];
     return `
       <div class="tpl-row">
         <select class="select" id="tpl-pick">
           <option value="">자주 쓰는 답변 넣기…</option>
+          ${amazonTpls.length ? `<optgroup label="추천 · 아마존 주문">${amazonTpls.map(opt).join('')}</optgroup>` : ''}
           ${recommended.length ? `<optgroup label="추천 · ${esc(t.type)}">${recommended.map(opt).join('')}</optgroup>` : ''}
           ${cats.map((cat) => `<optgroup label="${esc(cat)}">${list.filter((x) => x.cat === cat).map(opt).join('')}</optgroup>`).join('')}
         </select>
@@ -788,6 +870,32 @@
             </div>
           </div>
         </div>
+        <div class="tiles">
+          <div class="tile"><div class="lbl">고객 회신 대기</div><div class="val">${s.waiting ?? 0}<small>건</small></div><div class="sub">회신 없으면 자동으로 다시 열림</div></div>
+          <div class="tile"><div class="lbl">팔로업 필요</div><div class="val">${s.followups ?? 0}<small>건</small></div><div class="sub">고객 대기 중 회신이 없던 건</div></div>
+          <div class="tile"><div class="lbl">아마존 주문 문의</div><div class="val">${s.amazon ?? 0}<small>건</small></div><div class="sub">최근 ${s.days}일</div></div>
+          <div class="tile"><div class="lbl">자동 종결 (알림 메일)</div><div class="val">${s.autoClosed ?? 0}<small>건</small></div><div class="sub">최근 ${s.days}일</div></div>
+        </div>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-h">유형별 첫 응답 시간</div>
+            <table class="tbl">
+              <thead><tr><th>유형</th><th class="num">건수</th><th class="num">평균 첫 응답</th></tr></thead>
+              <tbody>
+                ${(s.byTypeResponse || []).map((r) => `<tr><td>${esc(r.type)}</td><td class="num">${r.count}</td><td class="num">${hours(r.avgHours)}</td></tr>`).join('') || '<tr><td colspan="3" class="hint">데이터 없음</td></tr>'}
+              </tbody>
+            </table>
+          </div>
+          <div class="card">
+            <div class="card-h">반복 문의 고객 <span class="right hint">기간 안에 2번 이상</span></div>
+            <table class="tbl">
+              <thead><tr><th>고객</th><th class="num">문의</th></tr></thead>
+              <tbody>
+                ${(s.repeatCustomers || []).map((c) => `<tr><td><b>${esc(c.name || c.email)}</b><div class="hint">${esc(c.email)}</div></td><td class="num">${c.count}</td></tr>`).join('') || '<tr><td colspan="2" class="hint">반복 문의한 고객이 없습니다</td></tr>'}
+              </tbody>
+            </table>
+          </div>
+        </div>
         <div class="card">
           <div class="card-h">담당자별</div>
           <table class="tbl">
@@ -885,6 +993,10 @@
                 <div><div class="name">Claude AI</div><div class="desc">${S.me.ai.enabled ? `자동 분류 · 답장 초안 (${esc(S.me.ai.model)})` : 'ANTHROPIC_API_KEY 없음 — 키워드 분류와 기본 템플릿으로 동작'}</div></div>
                 <div class="right">${S.me.ai.enabled ? '<span class="chip ok">사용 중</span>' : '<span class="chip">미설정</span>'}</div>
               </div>
+              <div class="conn">
+                <div><div class="name">슬랙 알림</div><div class="desc">${S.me.slack?.enabled ? '긴급 문의 · 24시간 미답변 · 배정 알림 · 매일 오전 9시 요약' : 'Vercel 환경변수 SLACK_WEBHOOK_URL (Incoming Webhook) 필요'}</div></div>
+                <div class="right">${S.me.slack?.enabled ? '<span class="chip ok">사용 중</span>' : '<span class="chip">미설정</span>'}</div>
+              </div>
             </div>
             <div class="card">
               <div class="card-h">메일 가져오기</div>
@@ -900,6 +1012,10 @@
                 <label class="field">자동 종결할 발신자 (알림·자동 발송 메일)
                   <textarea class="textarea" id="s-autoclose" style="min-height:110px">${esc((st.autoClose || []).join('\n'))}</textarea>
                   <span class="hint">한 줄에 하나. <code>no-reply@</code> = 이 아이디로 시작 · <code>facebookmail.com</code> = 그 도메인 · 전체 주소 = 그 주소만. 들어오면 AI 분류 없이 바로 '종결'됩니다.</span>
+                </label>
+                <label class="field">고객 대기 → 팔로업 기한 (일)
+                  <input class="input" id="s-followup" type="number" min="1" max="30" value="${esc(st.followupDays || 3)}" style="width:100px">
+                  <span class="hint">'고객 대기'로 둔 문의에 이 기간 동안 고객 회신이 없으면 '팔로업 필요'로 다시 처리 목록에 올립니다.</span>
                 </label>
               </div>
             </div>
@@ -946,7 +1062,7 @@
           <input class="input tpl-forward" value="${esc(x.forward || '')}" placeholder="전달 버튼 주소 (선택) 예: global_sales@neosimplix.com">
           <label class="hint">보낸 뒤 상태
             <select class="select tpl-after">
-              ${[['', '답변완료 (기본)'], ['진행중', '진행중 (고객 회신 대기)'], ['종결', '종결']].map(([v, l]) => `<option value="${v}" ${(x.after || '') === v ? 'selected' : ''}>${l}</option>`).join('')}
+              ${[['', '답변완료 (기본)'], ['고객 대기', '고객 대기 (회신 오면 다시 열림)'], ['진행중', '진행중'], ['종결', '종결']].map(([v, l]) => `<option value="${v}" ${(x.after || '') === v ? 'selected' : ''}>${l}</option>`).join('')}
             </select>
           </label>
         </div>
@@ -974,6 +1090,7 @@
           query: $('#s-query').value,
           aliases: $('#s-aliases').value.split(',').map((s) => s.trim()).filter(Boolean),
           autoClose: $('#s-autoclose').value.split('\n').map((s) => s.trim()).filter(Boolean),
+          followupDays: Number($('#s-followup').value) || 3,
           guide: $('#s-guide').value,
           signature: $('#s-signature').value,
           templates: collectTemplates(),
@@ -999,6 +1116,17 @@
       await api('/api/auth', { method: 'POST', body: { action: 'logout' } }).catch(() => {});
       S.me = null;
       renderLogin();
+    } else if (a === 'pick') {
+      if (el.checked) S.bulk.add(el.dataset.id);
+      else S.bulk.delete(el.dataset.id);
+      el.closest('.item')?.classList.toggle('picked', el.checked);
+      renderBulkBar();
+    } else if (a === 'bulk-all') {
+      filtered().forEach((t) => S.bulk.add(t.id));
+      renderList();
+    } else if (a === 'bulk-clear') {
+      S.bulk.clear();
+      renderList();
     } else if (a === 'open') openTicket(el.dataset.id);
     else if (a === 'close') {
       S.selected = null;
@@ -1087,6 +1215,17 @@
       if (S.view === 'inbox') renderList();
     } catch (err) {
       toast(err.message, 'error');
+    }
+    // 슬랙 알림 링크(/?t=티켓ID)로 들어오면 그 문의를 바로 연다
+    const deep = params.get('t');
+    if (deep) {
+      history.replaceState(null, '', location.pathname);
+      const t = S.tickets.find((x) => x.id === deep) || S.tickets.find((x) => x.related?.includes(deep));
+      if (t) {
+        S.view = 'inbox';
+        renderView();
+        openTicket(t.id);
+      }
     }
     // 마지막 동기화가 3분 넘었으면 자동으로 새 메일 가져오기
     if (Date.now() - S.syncedAt > 3 * 60_000) sync({ quiet: true });

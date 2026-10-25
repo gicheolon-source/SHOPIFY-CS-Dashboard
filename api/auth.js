@@ -3,6 +3,7 @@ const { handler, send, query, body, sign, credVersion, currentUser, isHttps, Htt
 const google = require('../lib/google');
 const shopify = require('../lib/shopify');
 const ai = require('../lib/ai');
+const slack = require('../lib/slack');
 
 const members = () => (process.env.TEAM_MEMBERS || '').split(',').map((s) => s.trim()).filter(Boolean);
 
@@ -35,6 +36,7 @@ module.exports = handler(async (req, res) => {
       google: { configured: google.configured(), connected: !!conn && !conn.broken, ...(conn || {}) },
       shopify: { configured: shopify.configured() || process.env.DEMO_MODE === '1' },
       ai: { enabled: ai.enabled(), model: ai.MODEL },
+      slack: { enabled: slack.enabled() },
       demo: process.env.DEMO_MODE === '1',
     });
   }
