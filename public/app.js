@@ -440,6 +440,7 @@
             <button class="btn" data-action="draft" ${c.loading ? 'disabled' : ''}>${c.loading ? `<span class="spin"></span> ${c.loading === 'fill' ? '빈칸 채우는 중' : '작성 중'}` : `${icon.spark} AI 초안`}</button>
           </div>
           ${templatePicker(t)}
+          ${c.action ? `<div class="todo"><b>처리할 일</b> (고객에게 보내지 않음)\n${esc(c.action)}</div>` : ''}
           ${c.notes ? `<div class="notes"><b>확인할 것</b>\n${esc(c.notes)}</div>` : ''}
           <textarea class="textarea reply-box" id="reply-box" placeholder="답장을 입력하거나 AI 초안을 생성하세요">${esc(c.text)}</textarea>
           ${c.ko ? `<details class="translation" open><summary><b>한국어 번역</b> (참고용, 발송되지 않음)</summary>\n${esc(c.ko)}</details>` : ''}
@@ -489,10 +490,10 @@
     const current = (box ? box.value : S.composer.text).trim();
     const replace = !current || confirm('작성 중인 답장을 이 템플릿으로 바꿀까요?\n(취소하면 아래에 이어 붙입니다)');
     S.composer.text = replace ? text : `${current}\n\n${text}`;
-    Object.assign(S.composer, { ko: '', notes: '' });
+    Object.assign(S.composer, { ko: '', notes: '', action: tpl.action || '' });
     renderDetail();
-    // 빈칸이 있으면 메일·Shopify 주문 내용으로 AI가 자동으로 채운다
-    if (replace && S.me.ai.enabled && /\[(확인 필요|주문번호|송장번호|새 주소|본문)/.test(text)) generateDraft(text);
+    // [국가명]·[트래킹넘버] 같은 한글 빈칸이 있으면 메일·Shopify 주문 내용으로 AI가 자동으로 채운다
+    if (replace && S.me.ai.enabled && /\[[^\]\n]*[가-힣][^\]\n]*\]/.test(text)) generateDraft(text);
     else $('#reply-box')?.focus();
   }
 
@@ -898,6 +899,7 @@
           <button class="btn sm ghost danger" data-action="tpl-del">삭제</button>
         </div>
         <textarea class="textarea tpl-body">${esc(x.body)}</textarea>
+        <input class="input tpl-action" value="${esc(x.action || '')}" placeholder="처리할 일 (담당자용 메모, 고객에게 안 보냄) 예: Shopify에서 Cancel order">
       </details>`;
   }
 
@@ -908,6 +910,7 @@
       title: el.querySelector('.tpl-title').value,
       types: el.querySelector('.tpl-types').value.split(',').map((s) => s.trim()).filter(Boolean),
       body: el.querySelector('.tpl-body').value,
+      action: el.querySelector('.tpl-action').value,
     }));
   }
 

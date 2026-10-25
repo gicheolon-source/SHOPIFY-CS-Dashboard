@@ -314,6 +314,9 @@ table.tbl td.num, table.tbl th.num { text-align: right; font-variant-numeric: ta
 .tpl-item summary { cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .tpl-fields { display: grid; grid-template-columns: 160px 1fr 1fr auto; gap: 8px; margin: 10px 0 8px; }
 .tpl-body { min-height: 200px; font-size: 13px; }
+.tpl-action { margin-top: 8px; font-size: 12.5px; }
+.todo { background: var(--accent-soft); color: var(--text); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; white-space: pre-wrap; }
+.todo b { color: var(--accent); }
 .tpl-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-top: 1px solid var(--border); }
 .composer .tpl-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 @media (max-width: 760px) { .tpl-fields { grid-template-columns: 1fr; } }
