@@ -371,6 +371,12 @@
     $('#inbox')?.classList.add('show-detail');
     renderList();
     renderDetail();
+    // 아마존 MCF 배송은 느릴 수 있어 따로 불러 다 되면 카드만 다시 그린다
+    S.mcf = { id, loading: true };
+    api(`/api/shopify?id=${encodeURIComponent(id)}&mcf=1`)
+      .then((m) => { S.mcf = { id, ...m }; })
+      .catch((err) => { S.mcf = { id, error: err.message }; })
+      .finally(() => { if (S.selected === id && S.detail) renderDetail(); });
     const [detail, orders] = await Promise.allSettled([
       api(`/api/thread?id=${encodeURIComponent(id)}`),
       api(`/api/shopify?id=${encodeURIComponent(id)}`),
@@ -494,6 +500,7 @@
         </div>
         <aside class="side">
           ${renderOrders()}
+          ${renderMcf()}
           ${renderCustomerHistory(t)}
           ${renderSimilar(t)}
           <div class="card">
@@ -779,7 +786,7 @@
               ${x.refunded ? `<span class="chip warn">환불 ${esc(x.refunded)}</span>` : ''}
             </div>
             <div class="items">${x.items.map((i) => `${esc(i.title)} ×${esc(i.quantity)}`).join('<br>')}</div>
-            ${x.tracking.map((tr) => `<div>${esc(tr.company || '')} ${tr.url ? `<a href="${esc(tr.url)}" target="_blank" rel="noopener">${esc(tr.number)}</a>` : esc(tr.number || '')} <span class="hint">${esc(tr.status || '')}</span></div>`).join('')}
+            ${x.tracking.map((tr) => `<div>${esc(tr.company || '')} ${tr.url ? `<a href="${esc(tr.url)}" target="_blank" rel="noopener">${esc(tr.number)}</a>` : esc(tr.number || '')} <span class="hint">${esc(tr.status || '')}</span>${shipDates(tr)}</div>`).join('')}
             ${x.id && x.id.startsWith('gid://') ? `
             <div class="order-acts">
               ${!x.cancelled ? `<button class="btn xs" data-action="order-act" data-kind="cancel" data-idx="${idx(x)}">취소</button>` : ''}
@@ -794,6 +801,36 @@
   }
 
   const idx = (x) => S.orders.orders.indexOf(x);
+
+  // Shopify 출고일·배송 완료일 (없으면 예상 도착일)
+  const shortDay = (v) => (v ? new Date(v).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }) : '');
+  function shipDates(tr) {
+    const parts = [tr.shippedAt && `출고 ${shortDay(tr.shippedAt)}`, tr.deliveredAt ? `배송완료 ${shortDay(tr.deliveredAt)}` : tr.eta && `예상 ${shortDay(tr.eta)}`].filter(Boolean);
+    return parts.length ? `<div class="hint">${parts.join(' · ')}</div>` : '';
+  }
+
+  // ---------- 아마존 MCF 배송 (읽기 전용) ----------
+  const MCF_STATUS = { Complete: '출고 완료', CompletePartialled: '일부 출고', Processing: '처리 중', Planning: '준비 중', Received: '접수', Cancelled: '취소됨', Unfulfillable: '출고 불가', Invalid: '오류' };
+  const SHIP_STATUS = { SHIPPED: '배송 중/완료', PENDING: '출고 대기', CANCELLED_BY_FULFILLER: '취소(창고)', CANCELLED_BY_SELLER: '취소' };
+  function renderMcf() {
+    const m = S.mcf?.id === S.selected ? S.mcf : null;
+    let body;
+    if (!m || m.loading) body = '<div class="hint"><span class="spin"></span> MCF 조회 중…</div>';
+    else if (m.error) body = `<div class="hint" style="color:var(--danger)">${esc(m.error)}</div>`;
+    else if (!m.configured) body = '<div class="hint">아마존 SP-API 키(SP_CLIENT_ID 등)가 설정되지 않았어요.</div>';
+    else if (!m.originals.length && !m.reships.length) body = '<div class="hint">이 고객의 MCF 출고·재발송 기록이 없어요 (최근 60일).</div>';
+    else {
+      const block = (o, label) => `
+        <div class="order">
+          <div class="row1"><b>${label}</b> <span class="hint">${esc(o.id)}</span>${o.guessed ? ' <span class="chip warn" title="주문과 연결 안 된 MCF라 받는 사람 이름으로 찾았어요. 맞는지 확인하세요.">이름으로 추정</span>' : ''}</div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap"><span class="chip ${o.status === 'Complete' ? 'ok' : o.status === 'Cancelled' || o.status === 'Unfulfillable' ? 'danger' : 'info'}">${esc(MCF_STATUS[o.status] || o.status)}</span><span class="hint">접수 ${shortDay(o.received)}${o.shopifyOrder ? ` · ${esc(o.shopifyOrder)}` : ''}${o.guessed ? ` · 받는 사람 ${esc(o.name)}` : ''}</span></div>
+          <div class="items">${o.items.map((i) => `${esc(i.sku)} ×${esc(i.qty)}${i.unfulfillable ? ` <span class="chip danger">출고 불가 ${i.unfulfillable}</span>` : ''}`).join('<br>')}</div>
+          ${o.shipments.map((s) => `<div>${esc(SHIP_STATUS[s.status] || s.status || '')}${s.shippedAt ? ` · 출고 ${shortDay(s.shippedAt)}` : ''}${s.eta ? ` · 예상 도착 ${shortDay(s.eta)}` : ''}${s.packages.map((p) => `<div>${esc(p.carrier || '')} <b>${esc(p.tracking || '')}</b></div>`).join('')}</div>`).join('') || '<div class="hint">아직 출고 전</div>'}
+        </div>`;
+      body = [...m.originals.map((o) => block(o, '원 주문 출고')), ...m.reships.map((o) => block(o, 'CS 재발송'))].join('');
+    }
+    return `<div class="card"><div class="card-h">아마존 MCF 배송 <span class="right hint">읽기 전용</span></div><div class="card-b">${body}</div></div>`;
+  }
 
   // ---------- Shopify 주문 처리 (취소·주소 변경·환불·메모) ----------
   // 실제 주문을 바꾸므로: 입력 → 요약 확인 → 실행 → 처리 이력·Shopify 메모에 기록

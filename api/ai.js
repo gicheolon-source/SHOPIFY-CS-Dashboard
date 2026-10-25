@@ -2,10 +2,18 @@ const { handler, send, body, requireUser, HttpError } = require('../lib/http');
 const ai = require('../lib/ai');
 const gmail = require('../lib/gmail');
 const shopify = require('../lib/shopify');
+const amazon = require('../lib/amazon');
 const tickets = require('../lib/tickets');
 const { getSettings } = require('../lib/settings');
 
-// 답장 초안 한 건 만들기 (메일·관련 메일·Shopify 주문·CS 가이드·답변 템플릿 참고)
+// 아마존 MCF 출고·재발송 요약 (실패해도 답장 초안은 계속 만든다)
+async function mcfText(ticket, shop) {
+  if (!amazon.configured() && process.env.DEMO_MODE !== '1') return '';
+  const m = await amazon.lookup(amazon.queryFor(ticket, shop)).catch((err) => ({ error: err.message }));
+  return m.error ? `조회 실패: ${m.error}` : amazon.context(m);
+}
+
+// 답장 초안 한 건 만들기 (메일·관련 메일·Shopify 주문·아마존 MCF·CS 가이드·답변 템플릿 참고)
 async function buildDraft(id, { instruction = '', template = '', author }) {
   const [{ thread, ticket }, settings, ourEmails] = await Promise.all([tickets.conversation(id), getSettings(), tickets.ourEmails()]);
   if (!ticket) throw new HttpError(404, '티켓을 찾을 수 없습니다');
@@ -15,10 +23,12 @@ async function buildDraft(id, { instruction = '', template = '', author }) {
     gmail.findRelated([id, ...(ticket.related || [])], { orderRefs: ticket.orderRefs || [], email: ticket.customer?.email }).catch(() => []),
   ]);
   await tickets.saveCustomerStats(ticket, shop.customer).catch(() => {});
+  const mcf = await mcfText(ticket, shop);
   const draft = await ai.draftReply({
     thread,
     ticket,
     orders: shop.orders,
+    mcf,
     related,
     settings,
     ourEmails,
@@ -40,7 +50,8 @@ module.exports = handler(async (req, res) => {
     if (!ai.enabled()) return send(res, 200, { issues: [], skipped: true });
     const [{ thread, ticket }, settings, ourEmails] = await Promise.all([tickets.conversation(id), getSettings(), tickets.ourEmails()]);
     const shop = await shopify.lookup({ email: ticket?.customer?.email, orderRefs: ticket?.orderRefs || [] }).catch(() => ({ orders: [] }));
-    const issues = await ai.reviewReply({ reply: String(text || ''), thread, orders: shop.orders, settings, ourEmails });
+    const mcf = ticket ? await mcfText(ticket, shop) : '';
+    const issues = await ai.reviewReply({ reply: String(text || ''), thread, orders: shop.orders, mcf, settings, ourEmails });
     return send(res, 200, { issues });
   }
 

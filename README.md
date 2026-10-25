@@ -39,6 +39,7 @@ dev/server.mjs  로컬 개발 서버
 | `CRON_SECRET` | 매일 09:00 KST Vercel Cron(`/api/stats?digest=1`: 자동 동기화 + 슬랙 요약) 인증 |
 | `APP_URL` | (선택) 슬랙 링크용 대시보드 주소. 없으면 Vercel 프로덕션 주소 |
 | `SHOPIFY_ORDER_PREFIX` | (선택) 주문번호 접두사, 기본 `DR` (DR#15409) |
+| `SP_CLIENT_ID` · `SP_CLIENT_SECRET` · `SP_REFRESH_TOKEN` | (선택) 아마존 SP-API LWA 앱 — MCF 출고·재발송 조회(읽기 전용). 아마존 대시보드와 같은 값 |
 | `TEAM_MEMBERS` | (선택) `Josh,Sophie,...` — 설정하면 로그인 시 이름을 목록에서 고름 |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth 클라이언트 |
 | `GOOGLE_REDIRECT_URI` | (선택) 기본값 `https://<도메인>/oauth/google/callback` |

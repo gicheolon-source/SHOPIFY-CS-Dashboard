@@ -5,6 +5,7 @@ const slack = require('../lib/slack');
 const ai = require('../lib/ai');
 const { readJSON, writeJSON } = require('../lib/store');
 const records = require('../lib/records');
+const amazon = require('../lib/amazon');
 
 const ANALYSIS_PATH = 'cs/analysis.json';
 
@@ -29,6 +30,8 @@ module.exports = handler(async (req, res) => {
     const open = all.filter((t) => !t.groupId && ['미처리', '진행중'].includes(t.status) && t.lastFromCustomer && t.type !== '스팸/광고')
       .sort((a, b) => a.lastCustomerAt - b.lastCustomerAt);
     await slack.digest(s, open);
+    // 아마존 MCF 재발송 목록도 아침에 미리 갱신 (낮에 처음 여는 사람이 기다리지 않게)
+    await amazon.refreshIndex().catch((err) => console.error('mcf index refresh failed', err.message));
     return send(res, 200, { ok: true, slack: slack.enabled() });
   }
   const user = requireUser(req);

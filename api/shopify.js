@@ -2,15 +2,21 @@ const { handler, send, query, body, requireUser, HttpError } = require('../lib/h
 const shopify = require('../lib/shopify');
 const tickets = require('../lib/tickets');
 const records = require('../lib/records');
+const amazon = require('../lib/amazon');
 
 const ORDER_ID = /^gid:\/\/shopify\/Order\/\d+$/;
 
 module.exports = handler(async (req, res) => {
   const user = requireUser(req);
   if (req.method === 'GET') {
-    const { id, email } = query(req);
+    const { id, email, mcf } = query(req);
     const ticket = id ? await tickets.getTicket(id) : null;
     const result = await shopify.lookup({ email: email || ticket?.customer?.email, orderRefs: ticket?.orderRefs || [] });
+    // 아마존 MCF 배송 (읽기 전용): 주문 카드와 따로 불러 화면이 느려지지 않게
+    if (mcf === '1') {
+      if (!ticket) throw new HttpError(404, '티켓을 찾을 수 없습니다');
+      return send(res, 200, await amazon.lookup(amazon.queryFor(ticket, result)));
+    }
     // 문의에 걸린 주문의 상품을 티켓에 남겨 둔다 (제품별 문제 통계용) — 바뀌었을 때만 저장
     if (ticket && result.orders?.length) {
       const items = orderItemsFor(ticket, result.orders);
