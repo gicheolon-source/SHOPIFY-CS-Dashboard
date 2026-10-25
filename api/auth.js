@@ -1,10 +1,16 @@
 const crypto = require('crypto');
-const { handler, send, query, body, sign, currentUser, isHttps, HttpError } = require('../lib/http');
+const { handler, send, query, body, sign, credVersion, currentUser, isHttps, HttpError } = require('../lib/http');
 const google = require('../lib/google');
 const shopify = require('../lib/shopify');
 const ai = require('../lib/ai');
 
 const members = () => (process.env.TEAM_MEMBERS || '').split(',').map((s) => s.trim()).filter(Boolean);
+
+// 공용 아이디(DASH_USER). 설정 안 돼 있으면(로컬 데모) 확인하지 않는다.
+function userOk(input) {
+  const expected = (process.env.DASH_USER || '').trim().toLowerCase();
+  return !expected || String(input || '').trim().toLowerCase() === expected;
+}
 
 function passwordOk(input) {
   const expected = process.env.DASH_PASSWORD || (process.env.VERCEL_ENV === 'production' ? '' : 'demo');
@@ -32,7 +38,7 @@ module.exports = handler(async (req, res) => {
       demo: process.env.DEMO_MODE === '1',
     });
   }
-  const { action, name, password } = await body(req);
+  const { action, id, name, password } = await body(req);
   if (action === 'logout') {
     setSession(req, res, '', 0);
     return send(res, 200, { ok: true });
@@ -41,12 +47,13 @@ module.exports = handler(async (req, res) => {
     const clean = String(name || '').trim().slice(0, 40);
     if (!clean) throw new HttpError(400, '이름을 입력해 주세요');
     if (members().length && !members().includes(clean)) throw new HttpError(400, '팀원 목록에 없는 이름입니다');
-    if (!passwordOk(password)) {
+    const passOk = passwordOk(password);
+    if (!userOk(id) || !passOk) {
       await new Promise((r) => setTimeout(r, 600));
-      throw new HttpError(401, '비밀번호가 맞지 않습니다');
+      throw new HttpError(401, '아이디 또는 비밀번호가 맞지 않습니다');
     }
     const maxAge = 30 * 86400;
-    setSession(req, res, sign({ name: clean, exp: Date.now() + maxAge * 1000 }), maxAge);
+    setSession(req, res, sign({ name: clean, v: credVersion(), exp: Date.now() + maxAge * 1000 }), maxAge);
     return send(res, 200, { ok: true });
   }
   throw new HttpError(400, '알 수 없는 요청');

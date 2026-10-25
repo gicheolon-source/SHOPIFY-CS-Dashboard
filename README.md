@@ -32,7 +32,8 @@ dev/server.mjs  로컬 개발 서버
 
 | 이름 | 설명 |
 |---|---|
-| `DASH_PASSWORD` | 팀 공용 로그인 비밀번호 |
+| `DASH_USER` | 팀 공용 로그인 아이디 |
+| `DASH_PASSWORD` | 팀 공용 로그인 비밀번호 (아이디·비밀번호를 바꾸면 기존 로그인이 모두 풀림) |
 | `DASH_SECRET` | 세션 서명·토큰 암호화 키 (바꾸면 Gmail 재연결 필요) |
 | `TEAM_MEMBERS` | (선택) `Josh,Sophie,...` — 설정하면 로그인 시 이름을 목록에서 고름 |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth 클라이언트 |

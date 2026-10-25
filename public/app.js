@@ -95,13 +95,16 @@
             <h1>Reju-All CS Desk</h1>
             <div class="hint">Dr.Reju-All 글로벌 스토어 고객문의 대시보드</div>
           </div>
-          <label class="field">이름
+          <label class="field">아이디
+            <input class="input" name="id" autocomplete="username" required>
+          </label>
+          <label class="field">비밀번호
+            <input class="input" name="password" type="password" autocomplete="current-password" required>
+          </label>
+          <label class="field">내 이름 <span class="hint">담당자·보낸 사람 표시용</span>
             ${members.length
               ? `<select class="select" name="name" style="width:100%">${members.map((m) => `<option>${esc(m)}</option>`).join('')}</select>`
-              : '<input class="input" name="name" autocomplete="username" placeholder="예: Josh" required>'}
-          </label>
-          <label class="field">팀 비밀번호
-            <input class="input" name="password" type="password" autocomplete="current-password" required>
+              : '<input class="input" name="name" autocomplete="nickname" placeholder="예: Josh" required>'}
           </label>
           <div class="error-text" id="login-error"></div>
           <button class="btn primary" type="submit" style="justify-content:center;height:40px">로그인</button>
@@ -110,6 +113,8 @@
     try {
       const last = localStorage.getItem('cs_last_name');
       if (last) $('[name=name]').value = last;
+      const lastId = localStorage.getItem('cs_last_id');
+      if (lastId) $('[name=id]').value = lastId;
     } catch {}
     $('#login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
@@ -117,8 +122,11 @@
       const btn = e.target.querySelector('button');
       btn.disabled = true;
       try {
-        await api('/api/auth', { method: 'POST', body: { action: 'login', name: f.get('name'), password: f.get('password') } });
-        try { localStorage.setItem('cs_last_name', f.get('name')); } catch {}
+        await api('/api/auth', { method: 'POST', body: { action: 'login', id: f.get('id'), name: f.get('name'), password: f.get('password') } });
+        try {
+          localStorage.setItem('cs_last_name', f.get('name'));
+          localStorage.setItem('cs_last_id', f.get('id'));
+        } catch {}
         await boot();
       } catch (err) {
         $('#login-error').textContent = err.message;
