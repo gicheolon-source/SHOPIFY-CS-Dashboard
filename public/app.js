@@ -992,10 +992,78 @@
             ${[7, 30, 90].map((d) => `<button class="${S.days === d ? 'on' : ''}" data-action="days" data-days="${d}">${d}일</button>`).join('')}
           </div>
         </div>
+        <div class="card" id="issues-card"></div>
         <div id="stats-body"><div class="skeleton"><span class="spin"></span> 계산 중…</div></div>
       </div></div>`;
     if (S.stats && S.stats.days === S.days) drawStats();
     loadStats();
+    drawIssues();
+    if (S.issues === undefined) loadIssues();
+  }
+
+  // ---------- 문제 주제 분석 (AI) ----------
+  // 문의를 "아마존 배송 추적 멈춤"처럼 조치 가능한 주제로 묶는다. 결과는 저장돼 팀 전체가 같이 본다.
+  async function loadIssues() {
+    try {
+      S.issues = await api('/api/stats?analysis=1');
+    } catch {
+      S.issues = null;
+    }
+    if (S.view === 'stats') drawIssues();
+  }
+
+  async function runIssues() {
+    S.issuesRunning = true;
+    drawIssues();
+    try {
+      S.issues = await api(`/api/stats?analysis=1&days=${S.days}`, { method: 'POST', body: {} });
+      toast(`문의 ${S.issues.count}건을 ${S.issues.themes.length}개 주제로 분석했습니다`);
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+    S.issuesRunning = false;
+    if (S.view === 'stats') drawIssues();
+  }
+
+  function drawIssues() {
+    const el = $('#issues-card');
+    if (!el) return;
+    const r = S.issues;
+    const btn = `<button class="btn sm ${r ? '' : 'primary'}" data-action="run-issues" ${S.issuesRunning ? 'disabled' : ''}>${S.issuesRunning ? '<span class="spin"></span> 분석 중 (30초쯤)' : `${icon.spark} 최근 ${S.days}일 ${r ? '다시 ' : ''}분석`}</button>`;
+    const head = `<div class="card-h">무슨 문제가 가장 많았나 <span class="hint">· AI 문제 주제 분석</span><span class="spacer"></span>${btn}</div>`;
+    if (!r) {
+      el.innerHTML = `${head}<div class="card-b hint">${S.issues === undefined ? '<span class="spin"></span> 불러오는 중…' : '버튼을 누르면 최근 문의를 "배송"처럼 넓은 유형이 아니라 "아마존 배송 추적 멈춤"처럼 구체적인 문제 주제로 묶어 보여줍니다. 결과는 저장돼 팀 전체가 같이 봐요.'}</div>`;
+      return;
+    }
+    const byCat = {};
+    for (const t of r.themes) byCat[t.category] = (byCat[t.category] || 0) + t.ids.length;
+    const max = Math.max(1, ...r.themes.map((t) => t.ids.length));
+    const ticketOf = (id) => S.tickets.find((x) => x.id === id || x.related?.includes(id));
+    el.innerHTML = `${head}
+      <div class="card-b issues">
+        <div class="hint">문의 ${r.count}건 (${esc(r.from)} ~ ${esc(r.to)}, 스팸·자동 알림 제외) · ${esc(r.by)} 님이 ${ago(r.at)} 분석 · 원인은 메일 내용에서 AI가 추정한 것이에요</div>
+        <div class="issue-cats">${Object.entries(byCat).sort((a, b) => b[1] - a[1]).map(([c, n]) => `<span class="chip">${esc(c)} <b>${n}</b></span>`).join('')}</div>
+        ${r.notes ? `<div class="issue-notes">${esc(r.notes)}</div>` : ''}
+        ${r.themes.map((t, i) => {
+          const list = t.ids.map(ticketOf).filter(Boolean);
+          const urgent = list.filter((x) => x.priority === '긴급').length;
+          return `
+          <details class="issue">
+            <summary>
+              <span class="rank">${i + 1}</span>
+              <span class="i-title"><span class="chip">${esc(t.category)}</span> ${esc(t.theme)}</span>
+              <span class="i-bar"><span style="width:${(t.ids.length / max) * 100}%"></span></span>
+              <span class="i-n">${t.ids.length}건${urgent ? ` <span class="chip danger">긴급 ${urgent}</span>` : ''}</span>
+            </summary>
+            <dl class="kv">
+              <dt>문제</dt><dd>${esc(t.what)}</dd>
+              <dt>원인 추정</dt><dd>${esc(t.cause)}</dd>
+              <dt>줄이려면</dt><dd>${esc(t.action)}</dd>
+            </dl>
+            <div class="i-list">${list.map((x) => `<button class="ch-row" data-action="open-ticket" data-id="${esc(x.id)}"><span class="chip ${STATUS_CHIP[x.status]}">${esc(x.status)}</span><span class="ch-subj">${esc(x.summary || x.subject)}</span><span class="hint">${esc(x.customer?.name || '')} · ${esc(fullDate(x.firstAt))}</span></button>`).join('') || '<span class="hint">목록에서 찾을 수 없는 문의예요 (보관 기간이 지났을 수 있어요)</span>'}</div>
+          </details>`;
+        }).join('')}
+      </div>`;
   }
 
   function drawStats() {
@@ -1316,6 +1384,7 @@
     else if (a === 'forward') forwardMail(el.dataset.to);
     else if (a === 'order-act') openOrderAction(el.dataset.kind, Number(el.dataset.idx));
     else if (a === 'tpl-insert') insertTemplate(el.dataset.id);
+    else if (a === 'run-issues') runIssues();
     else if (a === 'days') {
       S.days = Number(el.dataset.days);
       renderStats();

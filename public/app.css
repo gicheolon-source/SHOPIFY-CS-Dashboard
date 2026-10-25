@@ -395,3 +395,22 @@ table.tbl td.num, table.tbl th.num { text-align: right; font-variant-numeric: ta
   .kpi .num { font-size: 18px; }
 }
 .composer .tpl-suggest { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+
+/* ---------- 문제 주제 분석 ---------- */
+#issues-card .card-h { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+#issues-card .card-h .spacer { flex: 1; }
+.issues { display: grid; gap: 10px; }
+.issue-cats { display: flex; gap: 6px; flex-wrap: wrap; }
+.issue-notes { background: var(--surface-2); border-radius: 10px; padding: 10px 12px; font-size: 13px; white-space: pre-wrap; }
+.issue { border-top: 1px solid var(--border); padding: 8px 0; }
+.issue summary { display: grid; grid-template-columns: 22px minmax(0, 1fr) 120px auto; gap: 10px; align-items: center; cursor: pointer; list-style: none; }
+.issue summary::-webkit-details-marker { display: none; }
+.issue .rank { font-weight: 800; color: var(--text-3); text-align: right; }
+.issue .i-title { font-weight: 600; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.issue .i-bar { height: 8px; background: var(--surface-2); border-radius: 99px; overflow: hidden; }
+.issue .i-bar span { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+.issue .i-n { font-size: 12.5px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.issue .kv { margin: 10px 0 6px 32px; }
+.issue .i-list { display: grid; gap: 2px; margin-left: 32px; }
+@media (max-width: 760px) { .issue summary { grid-template-columns: 22px minmax(0, 1fr) auto; } .issue .i-bar { display: none; } .issue .kv, .issue .i-list { margin-left: 0; } }
+.issue .kv dd { font-weight: 400; }

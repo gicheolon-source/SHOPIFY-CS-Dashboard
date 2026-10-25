@@ -2,6 +2,10 @@ const crypto = require('crypto');
 const { handler, send, query, requireUser, HttpError } = require('../lib/http');
 const tickets = require('../lib/tickets');
 const slack = require('../lib/slack');
+const ai = require('../lib/ai');
+const { readJSON, writeJSON } = require('../lib/store');
+
+const ANALYSIS_PATH = 'cs/analysis.json';
 
 // 매일 아침 Vercel Cron이 Authorization: Bearer $CRON_SECRET 으로 부른다 (vercel.json crons)
 function isCron(req) {
@@ -26,7 +30,27 @@ module.exports = handler(async (req, res) => {
     await slack.digest(s, open);
     return send(res, 200, { ok: true, slack: slack.enabled() });
   }
-  requireUser(req);
+  const user = requireUser(req);
+  // 문제 주제 분석: GET은 마지막 결과, POST는 새로 분석 (AI 호출 1번, 결과는 팀 공유)
+  if (q.analysis === '1') {
+    if (req.method !== 'POST') return send(res, 200, (await readJSON(ANALYSIS_PATH, null)).data);
+    const days = Math.min(Math.max(Number(q.days) || 30, 7), 180);
+    const since = Date.now() - days * 86400_000;
+    const { tickets: all } = await tickets.readTickets();
+    const rows = Object.values(all)
+      .filter((t) => !t.groupId && !t.autoClosed && t.type !== '스팸/광고' && t.firstAt >= since)
+      .sort((a, b) => b.firstAt - a.firstAt)
+      .slice(0, 120) // 서버 시간 제한(60초) 안에 끝나도록 최근 120건까지
+      .map((t) => ({
+        id: t.id, type: t.type, priority: t.priority, date: new Date(t.firstAt + 9 * 3600_000).toISOString().slice(0, 10),
+        summary: t.summary || '', subject: t.subject, snippet: (t.snippet || '').slice(0, 200), channel: t.form ? 'form' : 'email', product: t.product || '',
+      }));
+    if (rows.length < 5) throw new HttpError(400, `분석할 문의가 너무 적습니다 (${rows.length}건)`);
+    const out = await ai.analyzeIssues(rows);
+    const result = { ...out, days, count: rows.length, from: rows.at(-1).date, to: rows[0].date, at: Date.now(), by: user.name };
+    await writeJSON(ANALYSIS_PATH, result);
+    return send(res, 200, result);
+  }
   const days = Math.min(Math.max(Number(q.days) || 30, 7), 180);
   const { tickets: all } = await tickets.readTickets();
   return send(res, 200, tickets.stats(Object.values(all), days));
