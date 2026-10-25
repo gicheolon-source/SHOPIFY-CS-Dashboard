@@ -399,6 +399,8 @@
     if (box) box.addEventListener('input', () => { S.composer.text = box.value; });
     const pick = $('#tpl-pick');
     if (pick) pick.addEventListener('change', () => { if (pick.value) insertTemplate(pick.value); });
+    const after = $('#after-status');
+    if (after) after.addEventListener('change', () => { S.composer.after = after.value; });
     const ins = $('#ai-instruction');
     if (ins) {
       ins.addEventListener('input', () => { S.composer.instruction = ins.value; });
@@ -440,13 +442,19 @@
             <button class="btn" data-action="draft" ${c.loading ? 'disabled' : ''}>${c.loading ? `<span class="spin"></span> ${c.loading === 'fill' ? '빈칸 채우는 중' : '작성 중'}` : `${icon.spark} AI 초안`}</button>
           </div>
           ${templatePicker(t)}
-          ${c.action ? `<div class="todo"><b>처리할 일</b> (고객에게 보내지 않음)\n${esc(c.action)}</div>` : ''}
+          ${c.action || c.forward ? `<div class="todo"><b>처리할 일</b> (고객에게 보내지 않음)\n${esc(c.action || '')}${c.forward ? `<div class="todo-act"><button class="btn sm" data-action="forward" data-to="${esc(c.forward)}">${icon.mail}${esc(c.forward)}로 메일 전달 (첨부 포함)</button></div>` : ''}</div>` : ''}
           ${c.notes ? `<div class="notes"><b>확인할 것</b>\n${esc(c.notes)}</div>` : ''}
           <textarea class="textarea reply-box" id="reply-box" placeholder="답장을 입력하거나 AI 초안을 생성하세요">${esc(c.text)}</textarea>
           ${c.ko ? `<details class="translation" open><summary><b>한국어 번역</b> (참고용, 발송되지 않음)</summary>\n${esc(c.ko)}</details>` : ''}
           <div class="actions">
             <span class="hint">발송 주소: ${esc(S.me.google.email || '-')}</span>
+            <button class="btn sm ghost" data-action="forward" title="고객 메일을 다른 팀 주소로 전달 (첨부 포함)">전달</button>
             <span class="spacer"></span>
+            <label class="hint after-sel">보낸 뒤
+              <select class="select" id="after-status">
+                ${['진행중', '답변완료', '종결'].map((s) => `<option ${(c.after || '답변완료') === s ? 'selected' : ''}>${s}</option>`).join('')}
+              </select>
+            </label>
             <button class="btn" data-action="send" data-mode="draft" ${c.sending ? 'disabled' : ''}>Gmail 임시보관함에 저장</button>
             <button class="btn primary" data-action="send" data-mode="send" ${c.sending ? 'disabled' : ''}>${c.sending ? '<span class="spin"></span>' : ''} 보내기</button>
           </div>
@@ -490,7 +498,7 @@
     const current = (box ? box.value : S.composer.text).trim();
     const replace = !current || confirm('작성 중인 답장을 이 템플릿으로 바꿀까요?\n(취소하면 아래에 이어 붙입니다)');
     S.composer.text = replace ? text : `${current}\n\n${text}`;
-    Object.assign(S.composer, { ko: '', notes: '', action: tpl.action || '' });
+    Object.assign(S.composer, { ko: '', notes: '', action: tpl.action || '', forward: tpl.forward || '', after: tpl.after || '' });
     renderDetail();
     // [국가명]·[트래킹넘버] 같은 한글 빈칸이 있으면 메일·Shopify 주문 내용으로 AI가 자동으로 채운다
     if (replace && S.me.ai.enabled && /\[[^\]\n]*[가-힣][^\]\n]*\]/.test(text)) generateDraft(text);
@@ -580,12 +588,20 @@
     const text = ($('#reply-box')?.value || '').trim();
     if (!text) return toast('답장 내용을 입력해 주세요', 'error');
     const t = S.tickets.find((x) => x.id === S.selected);
-    if (mode === 'send' && !confirm(`${t.customer?.email} 에게 이 답장을 바로 보낼까요?`)) return;
+    const after = $('#after-status')?.value || '답변완료';
+    if (mode === 'send') {
+      // 안 채운 빈칸([확인 필요: …], [트래킹넘버], {name} 등)이 남아 있으면 그대로 고객에게 나가므로 한 번 막는다
+      const blanks = [...new Set(text.match(/\[[^\]\n]*[가-힣][^\]\n]*\]|\{(name|order|signature)\}/g) || [])];
+      const ask = blanks.length
+        ? `⚠️ 아직 안 채운 빈칸이 ${blanks.length}개 있어요:\n${blanks.slice(0, 8).map((b) => `  ${b}`).join('\n')}\n\n이대로 보내면 고객에게 그대로 보입니다. 그래도 보낼까요?`
+        : `${t.customer?.email} 에게 이 답장을 바로 보낼까요?\n(보낸 뒤 상태: ${after})`;
+      if (!confirm(ask)) return;
+    }
     S.composer.sending = true;
     S.composer.text = text;
     renderDetail();
     try {
-      const r = await api('/api/send', { method: 'POST', body: { id: t.id, text, mode } });
+      const r = await api('/api/send', { method: 'POST', body: { id: t.id, text, mode, status: after } });
       if (r.ticket) mergeTicket(r.ticket);
       toast(mode === 'send' ? '답장을 보냈습니다' : 'Gmail 임시보관함에 저장했습니다');
       if (mode === 'send') {
@@ -598,6 +614,28 @@
     S.composer.sending = false;
     renderList();
     renderDetail();
+  }
+
+  // 고객의 마지막 메일을 다른 팀 주소로 전달 (첨부 포함)
+  async function forwardMail(defaultTo) {
+    const t = S.tickets.find((x) => x.id === S.selected);
+    if (!t) return;
+    let last = '';
+    try { last = localStorage.getItem('cs_last_forward') || ''; } catch {}
+    const to = (prompt('전달할 이메일 주소', defaultTo || last) || '').trim();
+    if (!to) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) return toast('이메일 주소가 올바르지 않습니다', 'error');
+    const note = prompt('같이 보낼 메모 (선택)', '') ?? null;
+    if (note === null) return;
+    try {
+      const r = await api('/api/send', { method: 'POST', body: { id: t.id, mode: 'forward', to, note } });
+      if (r.ticket) mergeTicket(r.ticket);
+      try { localStorage.setItem('cs_last_forward', to); } catch {}
+      toast(`${to}로 전달했습니다${r.skipped?.length ? ` (용량 때문에 첨부 ${r.skipped.length}개 제외)` : ''}`);
+      renderDetail();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
   }
 
   // ---------- 동기화 ----------
@@ -859,6 +897,10 @@
                   <input class="input" id="s-aliases" value="${esc((st.aliases || []).join(', '))}" placeholder="support@drrejuall.com, hello@...">
                   <span class="hint">이 주소에서 보낸 메일은 '우리 답장'으로 인식합니다. 연결된 계정은 자동 포함.</span>
                 </label>
+                <label class="field">자동 종결할 발신자 (알림·자동 발송 메일)
+                  <textarea class="textarea" id="s-autoclose" style="min-height:110px">${esc((st.autoClose || []).join('\n'))}</textarea>
+                  <span class="hint">한 줄에 하나. <code>no-reply@</code> = 이 아이디로 시작 · <code>facebookmail.com</code> = 그 도메인 · 전체 주소 = 그 주소만. 들어오면 AI 분류 없이 바로 '종결'됩니다.</span>
+                </label>
               </div>
             </div>
           </div>
@@ -899,7 +941,15 @@
           <button class="btn sm ghost danger" data-action="tpl-del">삭제</button>
         </div>
         <textarea class="textarea tpl-body">${esc(x.body)}</textarea>
-        <input class="input tpl-action" value="${esc(x.action || '')}" placeholder="처리할 일 (담당자용 메모, 고객에게 안 보냄) 예: Shopify에서 Cancel order">
+        <div class="tpl-extra">
+          <input class="input tpl-action" value="${esc(x.action || '')}" placeholder="처리할 일 (담당자용 메모, 고객에게 안 보냄) 예: Shopify에서 Cancel order">
+          <input class="input tpl-forward" value="${esc(x.forward || '')}" placeholder="전달 버튼 주소 (선택) 예: global_sales@neosimplix.com">
+          <label class="hint">보낸 뒤 상태
+            <select class="select tpl-after">
+              ${[['', '답변완료 (기본)'], ['진행중', '진행중 (고객 회신 대기)'], ['종결', '종결']].map(([v, l]) => `<option value="${v}" ${(x.after || '') === v ? 'selected' : ''}>${l}</option>`).join('')}
+            </select>
+          </label>
+        </div>
       </details>`;
   }
 
@@ -911,6 +961,8 @@
       types: el.querySelector('.tpl-types').value.split(',').map((s) => s.trim()).filter(Boolean),
       body: el.querySelector('.tpl-body').value,
       action: el.querySelector('.tpl-action').value,
+      forward: el.querySelector('.tpl-forward').value.trim(),
+      after: el.querySelector('.tpl-after').value,
     }));
   }
 
@@ -921,6 +973,7 @@
         body: {
           query: $('#s-query').value,
           aliases: $('#s-aliases').value.split(',').map((s) => s.trim()).filter(Boolean),
+          autoClose: $('#s-autoclose').value.split('\n').map((s) => s.trim()).filter(Boolean),
           guide: $('#s-guide').value,
           signature: $('#s-signature').value,
           templates: collectTemplates(),
@@ -967,6 +1020,7 @@
       else S.expanded.add(el.dataset.id);
     } else if (a === 'draft') generateDraft();
     else if (a === 'send') sendReply(el.dataset.mode);
+    else if (a === 'forward') forwardMail(el.dataset.to);
     else if (a === 'days') {
       S.days = Number(el.dataset.days);
       renderStats();
