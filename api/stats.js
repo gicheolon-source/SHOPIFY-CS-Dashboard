@@ -4,6 +4,7 @@ const tickets = require('../lib/tickets');
 const slack = require('../lib/slack');
 const ai = require('../lib/ai');
 const { readJSON, writeJSON } = require('../lib/store');
+const records = require('../lib/records');
 
 const ANALYSIS_PATH = 'cs/analysis.json';
 
@@ -53,5 +54,6 @@ module.exports = handler(async (req, res) => {
   }
   const days = Math.min(Math.max(Number(q.days) || 30, 7), 180);
   const { tickets: all } = await tickets.readTickets();
-  return send(res, 200, tickets.stats(Object.values(all), days));
+  const costs = await records.costSummary(days).catch(() => null);
+  return send(res, 200, { ...tickets.stats(Object.values(all), days), costs });
 });

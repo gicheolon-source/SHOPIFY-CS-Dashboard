@@ -14,6 +14,7 @@ async function buildDraft(id, { instruction = '', template = '', author }) {
     // 이미 대화에 합쳐진 스레드는 빼고 찾는다
     gmail.findRelated([id, ...(ticket.related || [])], { orderRefs: ticket.orderRefs || [], email: ticket.customer?.email }).catch(() => []),
   ]);
+  await tickets.saveCustomerStats(ticket, shop.customer).catch(() => {});
   const draft = await ai.draftReply({
     thread,
     ticket,
@@ -31,8 +32,48 @@ async function buildDraft(id, { instruction = '', template = '', author }) {
 module.exports = handler(async (req, res) => {
   const user = requireUser(req);
   if (req.method !== 'POST') throw new HttpError(405, 'POST만 지원합니다');
-  const { action, id, instruction, template } = await body(req);
+  const { action, id, instruction, template, text } = await body(req);
   if (!id) throw new HttpError(400, 'id가 필요합니다');
+
+  // 보내기 전 검수: 실수만 짚어 주고 막지는 않는다
+  if (action === 'review') {
+    if (!ai.enabled()) return send(res, 200, { issues: [], skipped: true });
+    const [{ thread, ticket }, settings, ourEmails] = await Promise.all([tickets.conversation(id), getSettings(), tickets.ourEmails()]);
+    const shop = await shopify.lookup({ email: ticket?.customer?.email, orderRefs: ticket?.orderRefs || [] }).catch(() => ({ orders: [] }));
+    const issues = await ai.reviewReply({ reply: String(text || ''), thread, orders: shop.orders, settings, ourEmails });
+    return send(res, 200, { issues });
+  }
+
+  // 비슷한 과거 처리: 처리 끝난 문의 중 비슷한 건 + 그때 보낸 답장·처리 이력
+  if (action === 'similar') {
+    if (!ai.enabled()) throw new HttpError(400, 'AI 키가 없어 찾을 수 없습니다');
+    const { tickets: all } = await tickets.readTickets();
+    const cur = all[id];
+    if (!cur) throw new HttpError(404, '티켓을 찾을 수 없습니다');
+    const pool = Object.values(all)
+      .filter((t) => t.id !== id && !t.groupId && !(cur.related || []).includes(t.id) && ['답변완료', '종결', '고객 대기'].includes(t.status)
+        && !t.autoClosed && t.type !== '스팸/광고' && t.summary)
+      .sort((a, b) => (b.type === cur.type) - (a.type === cur.type) || b.lastAt - a.lastAt)
+      .slice(0, 80);
+    const matches = await ai.findSimilar(
+      { type: cur.type, summary: cur.summary, subject: cur.subject, snippet: (cur.snippet || '').slice(0, 300) },
+      pool.map((t) => ({ id: t.id, type: t.type, summary: t.summary, subject: t.subject })),
+    );
+    const ourEmails = await tickets.ourEmails();
+    const results = await Promise.all(matches.map(async (m) => {
+      const t = all[m.id];
+      const thread = await gmail.threadFull(m.id).catch(() => null);
+      const ours = thread?.messages.filter((x) => ourEmails.includes(x.from.email)) || [];
+      const last = ours[ours.length - 1];
+      return {
+        id: t.id, why: m.why, subject: t.subject, summary: t.summary, status: t.status, firstAt: t.firstAt,
+        customer: t.customer?.name || t.customer?.email,
+        reply: last ? (last.text || last.snippet || '').slice(0, 1200) : '',
+        actions: (t.history || []).filter((h) => /Shopify|전달|상태|비용/.test(h.text)).slice(-6).map((h) => `${h.by}: ${h.text}`),
+      };
+    }));
+    return send(res, 200, { results });
+  }
 
   if (action === 'draft') {
     const { draft } = await buildDraft(id, { instruction, template, author: user.name });

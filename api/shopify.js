@@ -1,6 +1,7 @@
 const { handler, send, query, body, requireUser, HttpError } = require('../lib/http');
 const shopify = require('../lib/shopify');
 const tickets = require('../lib/tickets');
+const records = require('../lib/records');
 
 const ORDER_ID = /^gid:\/\/shopify\/Order\/\d+$/;
 
@@ -17,11 +18,22 @@ module.exports = handler(async (req, res) => {
         await tickets.updateTicket(id, {}, user.name, { fields: { orderItems: items } }).catch(() => {});
       }
     }
+    if (ticket) await tickets.saveCustomerStats(ticket, result.customer).catch(() => {});
     return send(res, 200, result);
   }
 
-  // 주문 처리: cancel · address · refund · note
+  // 주문 처리: cancel · address · refund · note · cost(비용 기록만, Shopify 변경 없음)
   const b = await body(req);
+  if (b.action === 'cost') {
+    const entry = await records.addCost({
+      kind: b.kind, amount: b.amount, currency: b.currency, order: b.orderName, ticketId: b.ticketId,
+      products: b.products, by: user.name, note: b.note,
+    }).catch((err) => { throw new HttpError(400, err.message); });
+    const ticket = b.ticketId
+      ? await tickets.updateTicket(String(b.ticketId), {}, user.name, { history: `비용 기록: ${records.COST_KINDS[entry.kind]} ${entry.amount} ${entry.currency}${entry.order ? ` (${entry.order})` : ''}` }).catch(() => null)
+      : null;
+    return send(res, 200, { ok: true, entry, ticket });
+  }
   if (!shopify.configured() && process.env.DEMO_MODE !== '1') throw new HttpError(409, 'Shopify가 연결되어 있지 않습니다');
   if (!ORDER_ID.test(String(b.orderId || ''))) throw new HttpError(400, '주문 ID가 올바르지 않습니다');
   const label = String(b.orderName || '').slice(0, 30) || '주문';
@@ -49,6 +61,16 @@ module.exports = handler(async (req, res) => {
     history = `Shopify ${label} 메모: ${String(b.note || '').slice(0, 80)}`;
   } else {
     throw new HttpError(400, '알 수 없는 주문 처리입니다');
+  }
+  // 대시보드에서 한 환불·취소 환불은 CS 비용으로 자동 기록
+  const cost = b.action === 'refund'
+    ? { kind: 'refund', amount: result.amount && result.amount !== 'full' ? result.amount : b.full !== false ? b.orderTotal : b.amount }
+    : b.action === 'cancel' && b.refund !== false ? { kind: 'cancel', amount: b.orderTotal } : null;
+  if (cost && records.toAmount(cost.amount) > 0) {
+    await records.addCost({
+      ...cost, currency: String(result.amount || b.orderTotal || '').match(/[A-Z]{3}/)?.[0] || b.currency || 'USD',
+      order: label, ticketId: b.ticketId, products: b.products, by: user.name, note: '대시보드에서 처리',
+    }).catch((err) => console.error('cost log failed', err.message));
   }
   const ticket = b.ticketId ? await tickets.updateTicket(String(b.ticketId), {}, user.name, { history }).catch(() => null) : null;
   return send(res, 200, { ...result, ticket });

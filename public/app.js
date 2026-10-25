@@ -183,12 +183,26 @@
   }
 
   // ---------- 인박스 ----------
+  // 보류(나중에 보기) 중인 문의는 기한까지 처리 목록·숫자에서 빠진다
+  const snoozed = (t) => !!t.snoozeUntil && t.snoozeUntil > Date.now();
+  // VIP: Shopify 누적 주문 수·구매액이 설정 기준 이상
+  const isVip = (t) => {
+    const s = t.customerStats;
+    return !!s && (s.orders >= (S.settings?.vipOrders || 3) || s.spent >= (S.settings?.vipSpend || 200));
+  };
+  // 블랙리스트(주의 고객)
+  const flagOf = (t) => S.settings?.blacklist?.[(t.customer?.email || '').toLowerCase()] || null;
+
   function counts() {
-    const c = { open: 0, all: S.tickets.length, needReply: 0, urgent: 0, mine: 0, today: 0 };
+    const c = { open: 0, all: S.tickets.length, needReply: 0, urgent: 0, mine: 0, today: 0, snoozed: 0 };
     for (const s of STATUSES) c[s] = 0;
     const startOfDay = new Date().setHours(0, 0, 0, 0);
     for (const t of S.tickets) {
       c[t.status] = (c[t.status] || 0) + 1;
+      if (snoozed(t)) {
+        c.snoozed++;
+        continue;
+      }
       if (OPEN.has(t.status)) {
         c.open++;
         if (t.lastFromCustomer && t.type !== '스팸/광고') c.needReply++;
@@ -204,6 +218,8 @@
     const f = S.filter;
     const q = f.q.trim().toLowerCase();
     let list = S.tickets.filter((t) => {
+      if (f.status === 'snoozed') return snoozed(t);
+      if ((f.status === 'open' || f.quick) && snoozed(t)) return false;
       if (f.status === 'open' && !OPEN.has(t.status)) return false;
       if (STATUSES.includes(f.status) && t.status !== f.status) return false;
       if (f.quick === 'needReply' && !(OPEN.has(t.status) && t.lastFromCustomer && t.type !== '스팸/광고')) return false;
@@ -218,7 +234,8 @@
       }
       return true;
     });
-    const pri = (t) => (t.priority === '긴급' && OPEN.has(t.status) ? 0 : 1);
+    // 처리 중인 문의는 긴급 → VIP → 나머지 순
+    const pri = (t) => (!OPEN.has(t.status) ? 2 : t.priority === '긴급' ? 0 : isVip(t) ? 1 : 2);
     if (f.sort === 'waiting') list.sort((a, b) => (b.lastFromCustomer - a.lastFromCustomer) || (a.lastCustomerAt - b.lastCustomerAt));
     else list.sort((a, b) => pri(a) - pri(b) || b.lastAt - a.lastAt);
     return list;
@@ -268,7 +285,7 @@
       ['mine', '내 담당', c.mine, ''],
       ['today', '오늘 접수', c.today, ''],
     ].map(([k, l, n, cls]) => `<button class="kpi ${S.filter.quick === k ? 'active' : ''}" data-action="quick" data-quick="${k}" ${k === 'today' ? 'disabled style="cursor:default"' : ''}><div class="num ${cls}">${n}</div><div class="lbl">${l}</div></button>`).join('');
-    $('#status-tabs').innerHTML = [['open', '처리 필요', c.open], ...STATUSES.map((s) => [s, s, c[s]]), ['all', '전체', c.all]]
+    $('#status-tabs').innerHTML = [['open', '처리 필요', c.open], ...STATUSES.map((s) => [s, s, c[s]]), ['snoozed', '보류', c.snoozed], ['all', '전체', c.all]]
       .map(([k, l, n]) => `<button class="status-tab ${S.filter.status === k ? 'active' : ''}" data-action="status-filter" data-status="${esc(k)}">${esc(l)}<span class="n">${n}</span></button>`).join('');
     $('#f-assignee').innerHTML = `<option value="">모든 담당자</option><option value="__none" ${S.filter.assignee === '__none' ? 'selected' : ''}>미배정</option>${assignees().map((a) => `<option value="${esc(a)}" ${S.filter.assignee === a ? 'selected' : ''}>${esc(a)}</option>`).join('')}`;
     const list = filtered();
@@ -286,6 +303,7 @@
           <input type="checkbox" class="pick" data-action="pick" data-id="${esc(t.id)}" title="여러 건 선택" ${S.bulk.has(t.id) ? 'checked' : ''}>
           <span class="dot ${esc(t.priority || '')}" title="우선순위 ${esc(t.priority || '-')}"></span>
           <span class="who">${esc(t.customer?.name || t.customer?.email)}</span>
+          ${isVip(t) ? `<span class="chip vip" title="누적 주문 ${t.customerStats.orders}건 · ${t.customerStats.spent} ${esc(t.customerStats.currency)}">VIP</span>` : ''}
           ${(t.groupMessages || t.messageCount) > 1 ? `<span class="hint" title="${t.related?.length ? `따로 온 메일 ${t.related.length + 1}건을 하나로 묶음` : ''}">${t.groupMessages || t.messageCount}</span>` : ''}
           <span class="time" title="${esc(fullDate(t.lastAt))}">${ago(t.lastAt)}</span>
         </div>
@@ -299,6 +317,8 @@
           ${OPEN.has(t.status) && t.lastFromCustomer && draftFresh(t) ? '<span class="chip ok" title="열면 미리 만든 AI 초안이 답장 칸에 들어가 있어요">AI 초안 준비</span>' : ''}
           ${t.amazonOrder ? `<span class="chip accent" title="아마존 주문번호 ${esc(t.amazonOrder)}">아마존 주문</span>` : ''}
           ${t.form ? '<span class="chip" title="홈페이지 문의 폼으로 들어온 문의">문의 폼</span>' : ''}
+          ${flagOf(t) ? `<span class="chip danger" title="${esc(flagOf(t).reason)}">⚠ 주의 고객</span>` : ''}
+          ${snoozed(t) ? `<span class="chip" title="${esc(fullDate(t.snoozeUntil))}까지 보류">⏸ ${esc(fullDate(t.snoozeUntil))}까지</span>` : ''}
           ${t.assignee ? `<span class="avatar sm" title="담당 ${esc(t.assignee)}">${initial(t.assignee)}</span>` : ''}
         </div>
       </article>`).join('');
@@ -380,7 +400,7 @@
     prefilling = true;
     try {
       const todo = S.tickets
-        .filter((t) => OPEN.has(t.status) && t.lastFromCustomer && t.type && t.type !== '스팸/광고' && !t.autoClosed && !draftFresh(t)
+        .filter((t) => OPEN.has(t.status) && !snoozed(t) && t.lastFromCustomer && t.type && t.type !== '스팸/광고' && !t.autoClosed && !draftFresh(t)
           && !(t.draftPendingAt && Date.now() - t.draftPendingAt < 3 * 60_000))
         .sort((a, b) => b.lastCustomerAt - a.lastCustomerAt)
         .slice(0, 15);
@@ -434,6 +454,7 @@
           <span><b>${esc(t.customer?.name)}</b> &lt;${esc(t.customer?.email)}&gt;</span>
           ${t.form ? `<span class="chip" title="홈페이지 문의 폼">문의 폼${t.form.country ? ` · ${esc(t.form.country)}` : ''}${t.form.phone ? ` · ${esc(t.form.phone)}` : ''}</span>` : ''}
           ${t.amazonOrder ? `<span class="chip accent" title="아마존에서 산 주문 — 고객 정보·주문 내역을 우리가 볼 수 없음">아마존 주문 ${esc(t.amazonOrder)}</span>` : ''}
+          ${isVip(t) ? `<span class="chip vip">VIP · 주문 ${t.customerStats.orders}건 · ${t.customerStats.spent} ${esc(t.customerStats.currency)}</span>` : ''}
           <span class="hint">· 첫 문의 ${esc(fullDate(t.firstAt))}</span>
           ${t.firstReplyAt ? `<span class="hint">· 첫 응답 ${hours((t.firstReplyAt - t.firstAt) / 3600000)} 만에</span>` : ''}
         </div>
@@ -452,8 +473,18 @@
             ${PRIORITIES.map((x) => `<option ${t.priority === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}
           </select>
           ${t.assignee !== S.me.user.name ? '<button class="btn sm" data-action="take">내가 맡기</button>' : ''}
+          <select class="select" id="snooze-pick" title="나중에 다시 보기">
+            <option value="">⏸ 나중에 보기…</option>
+            <option value="tomorrow">내일 오전 9시</option>
+            <option value="3d">3일 뒤 오전 9시</option>
+            <option value="monday">다음 주 월요일 오전 9시</option>
+            <option value="custom">날짜·시간 직접…</option>
+            ${snoozed(t) ? '<option value="clear">보류 해제</option>' : ''}
+          </select>
         </div>
       </div>
+      ${flagOf(t) ? `<div class="flag-banner">⚠ <b>주의 고객</b> · ${esc(flagOf(t).reason || '사유 없음')} <span class="hint">(${esc(flagOf(t).by)} · ${ago(flagOf(t).at)})</span><button class="btn xs ghost" data-action="unflag">해제</button></div>` : ''}
+      ${snoozed(t) ? `<div class="snooze-banner">⏸ <b>${esc(fullDate(t.snoozeUntil))}</b>까지 보류 중이라 처리 목록에서 빠져 있어요. 고객이 새로 메일하면 자동으로 풀립니다.</div>` : ''}
       <div class="detail-body">
         <div class="conversation">
           ${t.summary ? `<div class="card ai-summary">${icon.spark}<div><b>AI 요약</b> · ${esc(t.summary)}</div></div>` : ''}
@@ -463,6 +494,7 @@
         <aside class="side">
           ${renderOrders()}
           ${renderCustomerHistory(t)}
+          ${renderSimilar(t)}
           <div class="card">
             <div class="card-h">내부 메모</div>
             <div class="card-b"><textarea class="textarea" id="note" placeholder="팀원에게 남길 메모 (고객에게는 보이지 않음)" style="min-height:70px">${esc(t.note || '')}</textarea></div>
@@ -486,6 +518,13 @@
     if (pick) pick.addEventListener('change', () => { if (pick.value) insertTemplate(pick.value); });
     const after = $('#after-status');
     if (after) after.addEventListener('change', () => { S.composer.after = after.value; });
+    const snz = $('#snooze-pick');
+    if (snz) snz.addEventListener('change', () => {
+      const v = snoozeTime(snz.value);
+      snz.value = '';
+      if (v === undefined) return;
+      updateTicket({ snoozeUntil: v }, v ? `${fullDate(v)}까지 보류했어요` : '보류를 해제했어요');
+    });
     const ins = $('#ai-instruction');
     if (ins) {
       ins.addEventListener('input', () => { S.composer.instruction = ins.value; });
@@ -508,8 +547,83 @@
               <span class="ch-subj">${esc(x.subject)}</span>
               <span class="hint">${esc(fullDate(x.firstAt))}</span>
             </button>`).join('') || '<span class="hint">처음 문의한 고객입니다</span>'}
+          ${flagOf(t) ? '' : '<button class="btn xs ghost danger" data-action="flag" style="justify-self:start;margin-top:6px">블랙리스트(주의 고객) 등록</button>'}
         </div>
       </div>`;
+  }
+
+  // 비슷한 과거 처리: 처리 끝난 문의 중 비슷한 건과 그때 보낸 답장·처리 이력
+  function renderSimilar(t) {
+    const r = S.similar?.id === t.id ? S.similar : null;
+    let body;
+    if (!r) body = '<span class="hint">이 문의와 비슷했던 과거 문의를 찾아 그때 어떻게 답하고 처리했는지 보여줘요.</span>';
+    else if (r.loading) body = '<span class="hint"><span class="spin"></span> 찾는 중…</span>';
+    else if (r.error) body = `<span class="hint" style="color:var(--danger)">${esc(r.error)}</span>`;
+    else if (!r.results.length) body = '<span class="hint">비슷한 과거 처리가 없어요.</span>';
+    else {
+      body = r.results.map((x) => `
+        <div class="sim">
+          <button class="ch-row" data-action="open" data-id="${esc(x.id)}"><span class="chip ${STATUS_CHIP[x.status]}">${esc(x.status)}</span><span class="ch-subj">${esc(x.summary || x.subject)}</span><span class="hint">${esc(x.customer || '')} · ${esc(fullDate(x.firstAt))}</span></button>
+          <div class="hint">비슷한 이유: ${esc(x.why)}</div>
+          ${x.actions.length ? `<div class="sim-acts">${x.actions.map((a) => `<div>· ${esc(a)}</div>`).join('')}</div>` : ''}
+          ${x.reply ? `<details><summary>그때 보낸 답장</summary><div class="sim-reply">${esc(x.reply)}</div><button class="btn xs" data-action="sim-use" data-id="${esc(x.id)}">이 답장을 참고해 AI 초안 만들기</button></details>` : ''}
+        </div>`).join('');
+    }
+    return `
+      <div class="card">
+        <div class="card-h">비슷한 과거 처리 <span class="spacer"></span><button class="btn xs" data-action="similar" ${r?.loading ? 'disabled' : ''}>${r && !r.loading ? '다시 찾기' : '찾기'}</button></div>
+        <div class="card-b cust-hist">${body}</div>
+      </div>`;
+  }
+
+  async function findSimilar() {
+    const id = S.selected;
+    S.similar = { id, loading: true };
+    renderDetail();
+    try {
+      const d = await api('/api/ai', { method: 'POST', body: { action: 'similar', id } });
+      S.similar = { id, results: d.results };
+    } catch (err) {
+      S.similar = { id, error: err.message };
+    }
+    if (S.selected === id) renderDetail();
+  }
+
+  async function setFlag(remove) {
+    const t = S.tickets.find((x) => x.id === S.selected);
+    if (!t?.customer?.email) return;
+    let reason = '';
+    if (!remove) {
+      reason = prompt(`${t.customer.email} 을(를) 주의 고객으로 등록합니다.\n사유를 적어 주세요 (예: 환불 악용 반복, 차지백 이력)`, '');
+      if (reason === null) return;
+    } else if (!confirm(`${t.customer.email} 의 주의 고객 표시를 해제할까요?`)) return;
+    try {
+      const d = await api('/api/settings', { method: 'POST', body: { action: 'blacklist', email: t.customer.email, reason, remove, ticketId: t.id } });
+      S.settings = { ...(S.settings || {}), blacklist: d.blacklist };
+      toast(remove ? '주의 고객 표시를 해제했습니다' : '주의 고객으로 등록했습니다');
+      renderList();
+      renderDetail();
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  }
+
+  // 보류(나중에 보기): 다음 날 오전 9시 등 — 브라우저 현지 시각 기준
+  function snoozeTime(kind) {
+    const d = new Date();
+    const at9 = (x) => { x.setHours(9, 0, 0, 0); return x.getTime(); };
+    if (kind === 'tomorrow') { d.setDate(d.getDate() + 1); return at9(d); }
+    if (kind === '3d') { d.setDate(d.getDate() + 3); return at9(d); }
+    if (kind === 'monday') { d.setDate(d.getDate() + (((8 - d.getDay()) % 7) || 7)); return at9(d); }
+    if (kind === 'custom') {
+      const v = prompt('언제 다시 볼까요? (예: 2026-11-03 14:00)', '');
+      if (!v) return undefined;
+      const t = new Date(v.replace(' ', 'T')).getTime();
+      if (!(t > Date.now())) { toast('지금 이후 시각을 입력해 주세요', 'error'); return undefined; }
+      return t;
+    }
+    if (kind === 'clear') return null;
+    return undefined;
   }
 
   // 첨부: 사진은 미리보기, 나머지는 내려받기 (Gmail 첨부 ID가 있을 때)
@@ -562,7 +676,7 @@
           </div>
           ${templatePicker(t)}
           ${c.prefilled ? `<div class="prefilled">${icon.spark} 새 문의가 들어올 때 미리 만들어 둔 AI 초안이에요 (${ago(c.prefilled)}). 확인하고 고친 뒤 보내세요.</div>` : ''}
-          ${c.action || c.forward ? `<div class="todo"><b>처리할 일</b> (고객에게 보내지 않음)\n${esc(c.action || '')}${c.forward ? `<div class="todo-act"><button class="btn sm" data-action="forward" data-to="${esc(c.forward)}">${icon.mail}${esc(c.forward)}로 메일 전달 (첨부 포함)</button></div>` : ''}</div>` : ''}
+          ${c.action || c.forward || c.shopify ? `<div class="todo"><b>처리할 일</b> (고객에게 보내지 않음)\n${esc(c.action || '')}<div class="todo-act">${c.shopify ? `<button class="btn sm" data-action="macro-shopify" data-kind="${esc(c.shopify)}">🛒 Shopify ${esc(SHOPIFY_LABEL[c.shopify] || '')} 열기</button>` : ''}${c.forward ? `<button class="btn sm" data-action="forward" data-to="${esc(c.forward)}">${icon.mail}${esc(c.forward)}로 메일 전달 (첨부 포함)</button>` : ''}</div></div>` : ''}
           ${c.notes ? `<div class="notes"><b>확인할 것</b>\n${esc(c.notes)}</div>` : ''}
           <textarea class="textarea reply-box" id="reply-box" placeholder="답장을 입력하거나 AI 초안을 생성하세요">${esc(c.text)}</textarea>
           ${c.ko ? `<details class="translation" open><summary><b>한국어 번역</b> (참고용, 발송되지 않음)</summary>\n${esc(c.ko)}</details>` : ''}
@@ -576,7 +690,7 @@
               </select>
             </label>
             <button class="btn" data-action="send" data-mode="draft" ${c.sending ? 'disabled' : ''}>Gmail 임시보관함에 저장</button>
-            <button class="btn primary" data-action="send" data-mode="send" ${c.sending ? 'disabled' : ''}>${c.sending ? '<span class="spin"></span>' : ''} 보내기</button>
+            <button class="btn primary" data-action="send" data-mode="send" ${c.sending || c.reviewing ? 'disabled' : ''}>${c.sending || c.reviewing ? '<span class="spin"></span>' : ''} ${c.reviewing ? 'AI 검수 중' : '보내기'}</button>
           </div>
         </div>
       </div>`;
@@ -626,7 +740,7 @@
     const current = (box ? box.value : S.composer.text).trim();
     const replace = !current || confirm('작성 중인 답장을 이 템플릿으로 바꿀까요?\n(취소하면 아래에 이어 붙입니다)');
     S.composer.text = replace ? text : `${current}\n\n${text}`;
-    Object.assign(S.composer, { ko: '', notes: '', action: tpl.action || '', forward: tpl.forward || '', after: tpl.after || '', prefilled: 0 });
+    Object.assign(S.composer, { ko: '', notes: '', action: tpl.action || '', forward: tpl.forward || '', shopify: tpl.shopify || '', after: tpl.after || '', prefilled: 0 });
     renderDetail();
     // [국가명]·[트래킹넘버] 같은 한글 빈칸이 있으면 메일·Shopify 주문 내용으로 AI가 자동으로 채운다
     if (replace && S.me.ai.enabled && /\[[^\]\n]*[가-힣][^\]\n]*\]/.test(text)) generateDraft(text);
@@ -671,6 +785,7 @@
               ${!x.cancelled ? `<button class="btn xs" data-action="order-act" data-kind="address" data-idx="${idx(x)}">주소 변경</button>` : ''}
               ${x.refundable ? `<button class="btn xs" data-action="order-act" data-kind="refund" data-idx="${idx(x)}">환불</button>` : ''}
               <button class="btn xs ghost" data-action="order-act" data-kind="note" data-idx="${idx(x)}">메모</button>
+              <button class="btn xs ghost" data-action="order-act" data-kind="cost" data-idx="${idx(x)}">비용 기록</button>
             </div>` : ''}
           </div>`).join('')}`;
     }
@@ -681,6 +796,20 @@
 
   // ---------- Shopify 주문 처리 (취소·주소 변경·환불·메모) ----------
   // 실제 주문을 바꾸므로: 입력 → 요약 확인 → 실행 → 처리 이력·Shopify 메모에 기록
+  const SHOPIFY_LABEL = { cancel: '주문 취소', address: '주소 변경', refund: '환불', note: '주문 메모', cost: '비용 기록' };
+  const COST_KIND_LABEL = { reship: '재발송', shipping: '배송비 환불', compensation: '보상', refund: '환불 (Shopify 밖에서 처리)', other: '기타' };
+
+  // 매크로: 답변에 연결된 Shopify 작업을 이 문의의 주문으로 연다 (주문번호가 맞는 주문, 없으면 가장 최근 주문)
+  function openMacroShopify(kind) {
+    const orders = S.orders?.orders || [];
+    if (!orders.length) return toast('이 고객의 Shopify 주문을 찾지 못했어요. 오른쪽 주문 카드를 확인해 주세요.', 'error');
+    const t = S.tickets.find((x) => x.id === S.selected);
+    const digits = (t?.orderRefs || []).map((r) => (String(r).match(/\d{4,9}/) || [])[0]).filter(Boolean);
+    const i = Math.max(0, orders.findIndex((o) => digits.some((d) => o.name.includes(d))));
+    if (kind !== 'note' && kind !== 'cost' && orders[i].cancelled) return toast(`${orders[i].name}은(는) 이미 취소된 주문이에요`, 'error');
+    openOrderAction(kind, i);
+  }
+
   const CANCEL_REASONS = [['CUSTOMER', '고객 요청'], ['FRAUD', '사기 의심'], ['DECLINED', '결제 거절'], ['INVENTORY', '재고 없음'], ['STAFF', '직원 실수'], ['OTHER', '기타']];
 
   function openOrderAction(kind, i) {
@@ -732,6 +861,17 @@
         summary: null,
         payload: (f) => ({ note: f.get('note') }),
       },
+      cost: {
+        title: `주문 ${x.name} CS 비용 기록`,
+        body: `
+          <div class="hint">Shopify 주문은 바뀌지 않고, 통계 탭 'CS 비용'에만 기록돼요. 대시보드에서 한 환불·취소 환불은 자동으로 기록되니 따로 안 적어도 돼요.</div>
+          <label class="field">종류<select class="select" name="kind">${Object.entries(COST_KIND_LABEL).map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
+          <label class="field">금액 (${esc(x.currency || 'USD')})<input class="input" name="amount" type="number" min="0.01" step="0.01" required placeholder="예: 32.00"></label>
+          <div class="field">관련 상품${x.items.map((i) => `<label class="check"><input type="checkbox" name="products" value="${esc(i.title)}" ${x.items.length === 1 ? 'checked' : ''}> ${esc(i.title)}</label>`).join('')}</div>
+          <label class="field">메모 (선택)<input class="input" name="note" placeholder="예: MCF 재발송 1개 (PDRN 크림)"></label>`,
+        summary: (f) => `${COST_KIND_LABEL[f.get('kind')]} ${f.get('amount')} ${x.currency || 'USD'} 을(를) CS 비용으로 기록합니다.`,
+        payload: (f) => ({ kind: f.get('kind'), amount: f.get('amount'), note: f.get('note'), products: f.getAll('products') }),
+      },
     };
     const spec = forms[kind];
     const key = crypto.randomUUID ? crypto.randomUUID() : String(Date.now()); // 환불 중복 실행 방지 키
@@ -761,7 +901,11 @@
       btn.disabled = true;
       btn.innerHTML = '<span class="spin"></span> 처리 중';
       try {
-        const r = await api('/api/shopify', { method: 'POST', body: { action: kind, orderId: x.id, orderName: x.name, ticketId: S.selected, key, ...spec.payload(f) } });
+        // 주문 금액·상품은 환불·취소 시 CS 비용 자동 기록에 쓴다
+        const r = await api('/api/shopify', {
+          method: 'POST',
+          body: { action: kind, orderId: x.id, orderName: x.name, ticketId: S.selected, key, orderTotal: x.total, currency: x.currency, products: x.items.map((i) => i.title), ...spec.payload(f) },
+        });
         if (r.ticket) mergeTicket(r.ticket);
         dlg.close();
         toast(kind === 'note' ? 'Shopify 주문에 메모를 남겼습니다' : `${spec.title} 완료${r.amount && r.amount !== 'full' ? ` (${r.amount})` : ''}`);
@@ -827,9 +971,25 @@
     if (mode === 'send') {
       // 안 채운 빈칸([확인 필요: …], [트래킹넘버], {name} 등)이 남아 있으면 그대로 고객에게 나가므로 한 번 막는다
       const blanks = [...new Set(text.match(/\[[^\]\n]*[가-힣][^\]\n]*\]|\{(name|order|signature)\}/g) || [])];
-      const ask = blanks.length
-        ? `⚠️ 아직 안 채운 빈칸이 ${blanks.length}개 있어요:\n${blanks.slice(0, 8).map((b) => `  ${b}`).join('\n')}\n\n이대로 보내면 고객에게 그대로 보입니다. 그래도 보낼까요?`
-        : `${t.customer?.email} 에게 이 답장을 바로 보낼까요?\n(보낸 뒤 상태: ${after})`;
+      // 보내기 전 AI 검수: 환불 약속·주문 정보 불일치·안 한 대답 등을 짚는다 (실패하면 그냥 넘어감)
+      let issues = [];
+      if (S.me.ai.enabled && S.settings?.aiReview !== false) {
+        S.composer.reviewing = true;
+        S.composer.text = text;
+        renderDetail();
+        issues = await Promise.race([
+          api('/api/ai', { method: 'POST', body: { action: 'review', id: t.id, text } }).then((r) => r.issues || []).catch(() => []),
+          new Promise((r) => setTimeout(() => r([]), 30_000)),
+        ]);
+        S.composer.reviewing = false;
+        renderDetail();
+      }
+      const lines = [];
+      if (blanks.length) lines.push(`⚠️ 아직 안 채운 빈칸 ${blanks.length}개:\n${blanks.slice(0, 8).map((b) => `  ${b}`).join('\n')}`);
+      if (issues.length) lines.push(`🔎 AI 검수:\n${issues.map((i) => `  ${i.level === '위험' ? '❗' : '·'} [${i.level}] ${i.text}`).join('\n')}`);
+      const ask = lines.length
+        ? `${lines.join('\n\n')}\n\n그래도 ${t.customer?.email} 에게 보낼까요? (보낸 뒤 상태: ${after})`
+        : `${t.customer?.email} 에게 이 답장을 바로 보낼까요?\n(보낸 뒤 상태: ${after}${S.me.ai.enabled && S.settings?.aiReview !== false ? ' · AI 검수 문제 없음' : ''})`;
       if (!confirm(ask)) return;
     }
     S.composer.sending = true;
@@ -1118,6 +1278,7 @@
             </table>
           </div>
         </div>
+        ${costCard(s.costs)}
         <div class="card">
           <div class="card-h">제품별 문제 문의 <span class="right hint">${esc((s.problemTypes || []).join(' · '))} 유형 · AI가 찾은 제품 또는 주문 상품 기준</span></div>
           <table class="tbl">
@@ -1142,6 +1303,37 @@
       r.addEventListener('mousemove', (e) => moveTip(e));
       r.addEventListener('mouseleave', () => hideTip(r));
     });
+  }
+
+  // CS 비용: 대시보드에서 한 환불·취소 환불(자동) + '비용 기록'으로 남긴 재발송·배송비 환불 등
+  function costCard(c) {
+    if (!c) return '';
+    const fmt = (m) => Object.entries(m || {}).map(([cur, v]) => `${Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 })} ${esc(cur)}`).join(' + ') || '0';
+    return `
+      <div class="card">
+        <div class="card-h">CS 비용 <span class="right hint">최근 ${c.days}일 · ${c.count}건 · 환불·취소 환불은 자동, 재발송·배송비 환불은 주문 카드 '비용 기록'으로</span></div>
+        ${c.count ? `
+        <div class="grid-2 cost-grid">
+          <div>
+            <div class="cost-total">${fmt(c.total)}</div>
+            <table class="tbl"><thead><tr><th>종류</th><th class="num">금액</th></tr></thead><tbody>
+              ${Object.entries(c.byKind).map(([k, m]) => `<tr><td>${esc(k)}</td><td class="num">${fmt(m)}</td></tr>`).join('')}
+            </tbody></table>
+            <table class="tbl"><thead><tr><th>월</th><th class="num">금액</th></tr></thead><tbody>
+              ${Object.entries(c.byMonth).sort((a, b) => b[0].localeCompare(a[0])).map(([k, m]) => `<tr><td>${esc(k)}</td><td class="num">${fmt(m)}</td></tr>`).join('')}
+            </tbody></table>
+          </div>
+          <div>
+            <table class="tbl"><thead><tr><th>제품</th><th class="num">건수</th><th class="num">금액 (단일 상품 건)</th></tr></thead><tbody>
+              ${c.byProduct.map((p) => `<tr><td>${esc(p.product)}</td><td class="num">${p.count}</td><td class="num">${fmt(p.amount)}</td></tr>`).join('')}
+            </tbody></table>
+            <div class="hint" style="padding:8px 14px 0">최근 기록</div>
+            <table class="tbl"><tbody>
+              ${c.recent.map((x) => `<tr><td>${esc(new Date(x.at).toLocaleDateString('ko-KR'))}</td><td>${esc(x.kindLabel)}${x.order ? ` · ${esc(x.order)}` : ''}<div class="hint">${esc(x.by)}${x.note ? ` · ${esc(x.note)}` : ''}</div></td><td class="num">${x.amount} ${esc(x.currency)}</td></tr>`).join('')}
+            </tbody></table>
+          </div>
+        </div>` : '<div class="card-b hint">아직 기록된 비용이 없어요. 대시보드에서 환불·취소 환불을 하거나 주문 카드의 \'비용 기록\'을 쓰면 여기에 모여요.</div>'}
+      </div>`;
   }
 
   function barChart(daily) {
@@ -1259,6 +1451,8 @@
                 <span class="hint">환불 기준, 배송 기간, 자주 묻는 답변 등을 적어두면 AI 초안이 그대로 따릅니다.</span>
               </label>
               <label class="check"><input type="checkbox" id="s-autodraft" ${st.autoDraft !== false ? 'checked' : ''}> 새 문의가 들어오면 AI 초안을 미리 만들어 두기 <span class="hint">(문의 1건당 AI 호출 1번 · 답장 필요한 문의만)</span></label>
+              <label class="check"><input type="checkbox" id="s-aireview" ${st.aiReview !== false ? 'checked' : ''}> 보내기 직전 AI가 답장 검수하기 <span class="hint">(환불 약속·주문 정보 불일치·안 한 대답 등을 짚어줘요 · 답장 1통당 AI 호출 1번)</span></label>
+              <div class="field">VIP 기준 <span class="hint">(Shopify 누적 기준, 둘 중 하나만 넘어도 VIP)</span><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">주문 <input class="input" id="s-viporders" type="number" min="1" value="${esc(st.vipOrders || 3)}" style="width:80px">건 이상 또는 구매액 <input class="input" id="s-vipspend" type="number" min="1" value="${esc(st.vipSpend || 200)}" style="width:100px"> 이상</div></div>
               <label class="field">서명
                 <textarea class="textarea" id="s-signature" style="min-height:70px">${esc(st.signature)}</textarea>
               </label>
@@ -1297,6 +1491,11 @@
               ${[['', '답변완료 (기본)'], ['고객 대기', '고객 대기 (회신 오면 다시 열림)'], ['진행중', '진행중'], ['종결', '종결']].map(([v, l]) => `<option value="${v}" ${(x.after || '') === v ? 'selected' : ''}>${l}</option>`).join('')}
             </select>
           </label>
+          <label class="hint">같이 열 Shopify 작업
+            <select class="select tpl-shopify">
+              ${[['', '없음'], ...Object.entries(SHOPIFY_LABEL)].map(([v, l]) => `<option value="${v}" ${(x.shopify || '') === v ? 'selected' : ''}>${l}</option>`).join('')}
+            </select>
+          </label>
         </div>
       </details>`;
   }
@@ -1310,6 +1509,7 @@
       body: el.querySelector('.tpl-body').value,
       action: el.querySelector('.tpl-action').value,
       forward: el.querySelector('.tpl-forward').value.trim(),
+      shopify: el.querySelector('.tpl-shopify').value,
       after: el.querySelector('.tpl-after').value,
     }));
   }
@@ -1326,6 +1526,9 @@
           guide: $('#s-guide').value,
           signature: $('#s-signature').value,
           autoDraft: $('#s-autodraft').checked,
+          aiReview: $('#s-aireview').checked,
+          vipOrders: Number($('#s-viporders').value) || 3,
+          vipSpend: Number($('#s-vipspend').value) || 200,
           templates: collectTemplates(),
         },
       });
@@ -1385,6 +1588,14 @@
     else if (a === 'order-act') openOrderAction(el.dataset.kind, Number(el.dataset.idx));
     else if (a === 'tpl-insert') insertTemplate(el.dataset.id);
     else if (a === 'run-issues') runIssues();
+    else if (a === 'similar') findSimilar();
+    else if (a === 'macro-shopify') openMacroShopify(el.dataset.kind);
+    else if (a === 'flag') setFlag(false);
+    else if (a === 'unflag') setFlag(true);
+    else if (a === 'sim-use') {
+      const x = S.similar?.results?.find((r) => r.id === el.dataset.id);
+      if (x) { S.composer.instruction = `비슷한 과거 사례에서 보낸 답장을 참고해 같은 방식으로 처리: ${x.reply.slice(0, 600)}`; generateDraft(); }
+    }
     else if (a === 'days') {
       S.days = Number(el.dataset.days);
       renderStats();

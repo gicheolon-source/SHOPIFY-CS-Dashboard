@@ -344,7 +344,7 @@ table.tbl td.num, table.tbl th.num { text-align: right; font-variant-numeric: ta
 .tpl-item summary { cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 .tpl-fields { display: grid; grid-template-columns: 160px 1fr 1fr auto; gap: 8px; margin: 10px 0 8px; }
 .tpl-body { min-height: 200px; font-size: 13px; }
-.tpl-extra { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; margin-top: 8px; align-items: center; }
+.tpl-extra { display: grid; grid-template-columns: 1fr 1fr auto auto; gap: 8px; margin-top: 8px; align-items: center; }
 .tpl-extra .input { font-size: 12.5px; }
 .tpl-extra label { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
 .todo-act { margin-top: 8px; }
@@ -414,3 +414,20 @@ table.tbl td.num, table.tbl th.num { text-align: right; font-variant-numeric: ta
 .issue .i-list { display: grid; gap: 2px; margin-left: 32px; }
 @media (max-width: 760px) { .issue summary { grid-template-columns: 22px minmax(0, 1fr) auto; } .issue .i-bar { display: none; } .issue .kv, .issue .i-list { margin-left: 0; } }
 .issue .kv dd { font-weight: 400; }
+
+/* ---------- VIP · 주의 고객 · 보류 · 비슷한 처리 · 비용 ---------- */
+.chip.vip { background: #f6e7b8; color: #7a5a00; font-weight: 700; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .chip.vip { background: #4a3a10; color: #f5d77a; } }
+:root[data-theme="dark"] .chip.vip { background: #4a3a10; color: #f5d77a; }
+.flag-banner, .snooze-banner { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 16px; font-size: 12.5px; border-bottom: 1px solid var(--border); }
+.flag-banner { background: var(--danger-soft); color: var(--danger); }
+.snooze-banner { background: var(--surface-2); color: var(--text-2); }
+.flag-banner .btn { margin-left: auto; }
+.sim { display: grid; gap: 4px; padding: 6px 0; border-top: 1px solid var(--border); }
+.sim:first-child { border-top: 0; }
+.sim-acts { font-size: 12px; color: var(--text-2); }
+.sim details summary { cursor: pointer; font-size: 12px; color: var(--accent); }
+.sim-reply { white-space: pre-wrap; font-size: 12px; background: var(--surface-2); border-radius: 8px; padding: 8px; margin: 6px 0; max-height: 220px; overflow: auto; }
+.cost-grid { padding: 0 0 8px; }
+.cost-total { font-size: 22px; font-weight: 800; padding: 12px 14px 4px; }
+#snooze-pick { max-width: 150px; }
