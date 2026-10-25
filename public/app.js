@@ -188,7 +188,8 @@
   // VIP: Shopify 누적 주문 수·구매액이 설정 기준 이상
   const isVip = (t) => {
     const s = t.customerStats;
-    return !!s && (s.orders >= (S.settings?.vipOrders || 3) || s.spent >= (S.settings?.vipSpend || 200));
+    const minOrders = S.settings?.vipOrders ?? 0; // 0이면 주문 수 기준은 안 씀
+    return !!s && (s.spent >= (S.settings?.vipSpend || 500) || (minOrders > 0 && s.orders >= minOrders));
   };
   // 블랙리스트(주의 고객)
   const flagOf = (t) => S.settings?.blacklist?.[(t.customer?.email || '').toLowerCase()] || null;
@@ -1452,7 +1453,7 @@
               </label>
               <label class="check"><input type="checkbox" id="s-autodraft" ${st.autoDraft !== false ? 'checked' : ''}> 새 문의가 들어오면 AI 초안을 미리 만들어 두기 <span class="hint">(문의 1건당 AI 호출 1번 · 답장 필요한 문의만)</span></label>
               <label class="check"><input type="checkbox" id="s-aireview" ${st.aiReview !== false ? 'checked' : ''}> 보내기 직전 AI가 답장 검수하기 <span class="hint">(환불 약속·주문 정보 불일치·안 한 대답 등을 짚어줘요 · 답장 1통당 AI 호출 1번)</span></label>
-              <div class="field">VIP 기준 <span class="hint">(Shopify 누적 기준, 둘 중 하나만 넘어도 VIP)</span><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">주문 <input class="input" id="s-viporders" type="number" min="1" value="${esc(st.vipOrders || 3)}" style="width:80px">건 이상 또는 구매액 <input class="input" id="s-vipspend" type="number" min="1" value="${esc(st.vipSpend || 200)}" style="width:100px"> 이상</div></div>
+              <div class="field">VIP 기준 <span class="hint">(Shopify 누적 기준)</span><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">누적 구매액 <input class="input" id="s-vipspend" type="number" min="1" value="${esc(st.vipSpend || 500)}" style="width:100px"> 이상 · 또는 주문 <input class="input" id="s-viporders" type="number" min="0" value="${esc(st.vipOrders ?? 0)}" style="width:70px">건 이상 <span class="hint">(0이면 주문 수 기준은 안 씀)</span></div></div>
               <label class="field">서명
                 <textarea class="textarea" id="s-signature" style="min-height:70px">${esc(st.signature)}</textarea>
               </label>
@@ -1527,8 +1528,8 @@
           signature: $('#s-signature').value,
           autoDraft: $('#s-autodraft').checked,
           aiReview: $('#s-aireview').checked,
-          vipOrders: Number($('#s-viporders').value) || 3,
-          vipSpend: Number($('#s-vipspend').value) || 200,
+          vipOrders: Math.max(0, Number($('#s-viporders').value) || 0),
+          vipSpend: Number($('#s-vipspend').value) || 500,
           templates: collectTemplates(),
         },
       });
