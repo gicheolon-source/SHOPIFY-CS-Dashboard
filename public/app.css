@@ -394,3 +394,4 @@ table.tbl td.num, table.tbl th.num { text-align: right; font-variant-numeric: ta
   .msg-b { padding-left: 14px; }
   .kpi .num { font-size: 18px; }
 }
+.composer .tpl-suggest { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }

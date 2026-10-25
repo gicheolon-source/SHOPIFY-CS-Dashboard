@@ -591,17 +591,21 @@
     // 아마존 주문번호가 보이면 아마존 주문용 답변을 맨 위에 (본문 속 번호도 확인)
     const amazon = t.amazonOrder || (S.detail?.thread?.messages || []).some((m) => /\b\d{3}-\d{7}-\d{7}\b/.test(m.text || ''));
     const amazonTpls = amazon ? list.filter((x) => x.id.startsWith('m-amazon')) : [];
+    // AI가 분류할 때 메일 내용을 보고 고른 답변 (잘 맞는 순서)
+    const suggested = (t.suggested || []).map((id) => list.find((x) => x.id === id)).filter(Boolean);
     const cats = [...new Set(list.map((x) => x.cat))];
     return `
       <div class="tpl-row">
         <select class="select" id="tpl-pick">
           <option value="">자주 쓰는 답변 넣기…</option>
+          ${suggested.length ? `<optgroup label="★ 추천 · 이 문의 내용에 맞는 답변">${suggested.map(opt).join('')}</optgroup>` : ''}
           ${amazonTpls.length ? `<optgroup label="추천 · 아마존 주문">${amazonTpls.map(opt).join('')}</optgroup>` : ''}
           ${recommended.length ? `<optgroup label="추천 · ${esc(t.type)}">${recommended.map(opt).join('')}</optgroup>` : ''}
           ${cats.map((cat) => `<optgroup label="${esc(cat)}">${list.filter((x) => x.cat === cat).map(opt).join('')}</optgroup>`).join('')}
         </select>
         <span class="hint">빈칸은 AI가 메일·주문 내용으로 채워요 (확인 안 되는 건 남겨둠)</span>
-      </div>`;
+      </div>
+      ${suggested.length ? `<div class="tpl-suggest"><span class="hint">★ 추천 답변</span>${suggested.map((x) => `<button class="btn xs" data-action="tpl-insert" data-id="${esc(x.id)}" title="${esc(x.cat)}">${esc(x.title)}</button>`).join('')}</div>` : ''}`;
   }
 
   function fillTemplate(body, t) {
@@ -1311,6 +1315,7 @@
     else if (a === 'send') sendReply(el.dataset.mode);
     else if (a === 'forward') forwardMail(el.dataset.to);
     else if (a === 'order-act') openOrderAction(el.dataset.kind, Number(el.dataset.idx));
+    else if (a === 'tpl-insert') insertTemplate(el.dataset.id);
     else if (a === 'days') {
       S.days = Number(el.dataset.days);
       renderStats();
