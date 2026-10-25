@@ -23,6 +23,7 @@ module.exports = handler(async (req, res) => {
     inReplyTo: last.messageId,
     references: last.references,
   });
+  if (mode === 'send') await tickets.logSent({ id: result.id, threadId: id, by: user.name, at: Date.now() }).catch(() => {});
   let updated = null;
   if (ticket) {
     const sent = mode === 'send';

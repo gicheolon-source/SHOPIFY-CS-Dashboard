@@ -139,7 +139,7 @@
         <header class="topbar">
           <div class="brand"><div class="brand-mark">R</div><span>CS Desk</span></div>
           <nav class="tabs">
-            ${[['inbox', '인박스'], ['stats', '통계'], ['settings', '설정']].map(([k, l]) => `<button class="tab ${S.view === k ? 'active' : ''}" data-action="view" data-view="${k}">${l}</button>`).join('')}
+            ${[['inbox', '인박스'], ['sent', '보낸 메일'], ['stats', '통계'], ['settings', '설정']].map(([k, l]) => `<button class="tab ${S.view === k ? 'active' : ''}" data-action="view" data-view="${k}">${l}</button>`).join('')}
           </nav>
           <div class="spacer"></div>
           <span class="sync-info" id="sync-info"></span>
@@ -168,6 +168,7 @@
   function renderView() {
     document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.view === S.view));
     if (S.view === 'inbox') renderInbox();
+    else if (S.view === 'sent') renderSent();
     else if (S.view === 'stats') renderStats();
     else renderSettings();
   }
@@ -635,6 +636,70 @@
     if (S.view === 'stats') drawStats();
   }
 
+  // ---------- 보낸 메일 ----------
+  function renderSent() {
+    S.sentDays = S.sentDays || 30;
+    $('#view').innerHTML = `
+      <div class="page"><div class="page-inner">
+        <div class="page-head">
+          <h2>보낸 메일</h2>
+          <span class="hint">Gmail 보낸편지함 기준 · 대시보드에서 보낸 답장은 보낸 사람이 표시됩니다</span>
+          <div class="right seg" role="group" aria-label="기간">
+            ${[7, 30, 90].map((d) => `<button class="${S.sentDays === d ? 'on' : ''}" data-action="sent-days" data-days="${d}">${d}일</button>`).join('')}
+          </div>
+        </div>
+        <div class="search">${icon.search}<input class="input" id="sent-q" placeholder="받는 사람·제목·내용 검색" value="${esc(S.sentQ || '')}"></div>
+        <div class="card" id="sent-body"><div class="skeleton"><span class="spin"></span> 보낸 메일 불러오는 중…</div></div>
+      </div></div>`;
+    $('#sent-q').addEventListener('input', (e) => { S.sentQ = e.target.value; drawSent(); });
+    if (S.sent && S.sent.days === S.sentDays) drawSent();
+    loadSent();
+  }
+
+  async function loadSent() {
+    const days = S.sentDays;
+    try {
+      const d = await api(`/api/sent?days=${days}`);
+      if (S.sentDays !== days) return;
+      S.sent = d;
+      if (S.view === 'sent') drawSent();
+    } catch (err) {
+      const el = $('#sent-body');
+      if (el) el.innerHTML = `<div class="card-b" style="color:var(--danger)">${esc(err.message)}</div>`;
+    }
+  }
+
+  function drawSent() {
+    const el = $('#sent-body');
+    if (!el || !S.sent) return;
+    const q = (S.sentQ || '').trim().toLowerCase();
+    const items = S.sent.items.filter((m) => !q || `${m.to.map((x) => `${x.name} ${x.email}`).join(' ')} ${m.subject} ${m.snippet} ${m.by || ''}`.toLowerCase().includes(q));
+    const team = S.sent.items.filter((m) => m.by).length;
+    if (!items.length) {
+      el.innerHTML = `<div class="card-b hint">${q ? '검색 결과가 없습니다' : `최근 ${S.sent.days}일 동안 보낸 메일이 없습니다`}</div>`;
+      return;
+    }
+    const gmailUrl = (threadId) => `https://mail.google.com/mail/?authuser=${encodeURIComponent(S.me.google.email || '')}#all/${encodeURIComponent(threadId)}`;
+    el.innerHTML = `
+      <div class="card-h">${items.length}건 <span class="hint">· 대시보드 발송 ${team}건 · Gmail 직접 발송 ${S.sent.items.length - team}건</span></div>
+      <table class="tbl sent-tbl">
+        <thead><tr><th>보낸 시각</th><th>받는 사람</th><th>제목 · 내용</th><th>보낸 사람</th><th></th></tr></thead>
+        <tbody>
+          ${items.map((m) => {
+            const hasTicket = m.ticketId && S.tickets.some((t) => t.id === m.ticketId);
+            return `
+            <tr>
+              <td class="when" title="${esc(fullDate(m.at))}">${esc(fullDate(m.at))}</td>
+              <td>${m.to.map((x) => `<div class="who">${esc(x.name)}</div><div class="hint">${esc(x.email)}</div>`).join('')}</td>
+              <td><div class="subj">${esc(m.subject)}</div><div class="hint snip">${esc(m.snippet)}</div></td>
+              <td>${m.by ? `<span class="chip ok">${esc(m.by)}</span>` : '<span class="chip">Gmail 직접</span>'}</td>
+              <td class="act">${hasTicket ? `<button class="btn sm" data-action="open-ticket" data-id="${esc(m.ticketId)}">문의 열기</button>` : `<a class="btn sm ghost" href="${gmailUrl(m.threadId)}" target="_blank" rel="noopener">Gmail에서 보기</a>`}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
+  }
+
   function renderStats() {
     $('#view').innerHTML = `
       <div class="page"><div class="page-inner">
@@ -894,6 +959,13 @@
     else if (a === 'days') {
       S.days = Number(el.dataset.days);
       renderStats();
+    } else if (a === 'sent-days') {
+      S.sentDays = Number(el.dataset.days);
+      renderSent();
+    } else if (a === 'open-ticket') {
+      S.view = 'inbox';
+      renderView();
+      openTicket(el.dataset.id);
     } else if (a === 'save-settings') saveSettings();
     else if (a === 'tpl-add') {
       $('#tpl-list').insertAdjacentHTML('beforeend', templateEditor({ cat: '기타', title: '새 답변', body: 'Hi {name},\n\n\n\n{signature}', types: [] }, true));
